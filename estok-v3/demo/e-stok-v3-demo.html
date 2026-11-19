@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>e-Stok V3 Demo</title>
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      colors: { brand: { 50: '#eef3ff', 100: '#dbe6ff', 600: '#1f4fd1', 700: '#1a42b0', 800: '#16388f', 900: '#173f7c' }, emas: { 100: '#f6efd9', 500: '#b8912f' } }
+    } } };
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script>window.react = window.React; /* lucide-react UMD mencari global "react" */</script>
+  <script src="https://unpkg.com/lucide-react@0.294.0/dist/umd/lucide-react.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <style>
+    body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    @media print { body { background: #fff !important; } .no-print { display: none !important; } #laporan-cetak { border: 0 !important; box-shadow: none !important; padding: 0 !important; } }
+    ::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-[#eef2f8]">
+  <div id="root"><div style="padding:48px;text-align:center;font-family:sans-serif;color:#475569">Memuatkan e-Stok JHEAIPP…</div></div>
+
+  
+<script>
+/* ===== e-Stok V3 DEMO: simulasi Google Apps Script dalam pelayar ===== */
+(function () {
+  const KUNCI = 'estok_v3_demo_data_v1';
+  const DOMAIN = 'contoh.gov.my';
+  const PENGGUNA_DEMO = [
+    { emel: 'imran@' + DOMAIN, nama: 'En. Muhammad Imran bin Mohamed Radzi', jawatan: 'Pentadbir Sistem e-Stok', peranan: 'ADMIN_UPK', lokasi: 'UPK BUUKI (HQ)' },
+    { emel: 'kerani.upk@' + DOMAIN, nama: 'Nurul Aina binti Hassan', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_UPK', lokasi: 'UPK BUUKI (HQ)' },
+    { emel: 'pemantau@' + DOMAIN, nama: 'Ahmad Faiz bin Osman', jawatan: 'Penolong Pengarah', peranan: 'PEMANTAU_UPK', lokasi: 'UPK BUUKI (HQ)' },
+    { emel: 'kerani.bd@' + DOMAIN, nama: 'Siti Aminah binti Yusof', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_PAD', lokasi: 'Daerah Barat Daya' },
+    { emel: 'kerani.tl@' + DOMAIN, nama: 'Mohd Hafiz bin Ali', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_PAD', lokasi: 'Daerah Timur Laut' },
+    { emel: 'pegawai.bd@' + DOMAIN, nama: 'Ustaz Rahman bin Ismail', jawatan: 'Pegawai Tadbir Agama', peranan: 'PEGAWAI_PAD', lokasi: 'Daerah Barat Daya' }
+  ];
+  const TIDAK_BERDAFTAR = 'staf.baru@' + DOMAIN;
+  const simpanLS = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const bacaLS = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const bacaSS = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+  const simpanSS = (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) {} };
+
+  // ---------- Simulasi Sheets ----------
+  const pad = n => String(n).padStart(2, '0');
+  function fmtDate(d, tz, p) { // zon masa skrip = waktu tempatan pelayar (setara Asia/Kuala_Lumpur dalam Apps Script)
+    return p.replace('yyyy', d.getFullYear()).replace('yy', String(d.getFullYear()).slice(2)).replace('MM', pad(d.getMonth() + 1))
+      .replace('dd', pad(d.getDate())).replace('HH', pad(d.getHours())).replace('mm', pad(d.getMinutes())).replace('ss', pad(d.getSeconds()));
+  }
+  function coerce(v) {
+    if (typeof v === 'string') {
+      if (v.startsWith("'")) return v.slice(1);
+      const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}):(\d{2}))?$/);
+      if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    }
+    return v === undefined || v === null ? '' : v;
+  }
+  class Range {
+    constructor(sh, r, c, nr, nc) { Object.assign(this, { sh, r, c, nr, nc }); }
+    getValues() { this.sh._ensure(this.r + this.nr - 1, this.c + this.nc - 1); return this.sh.data.slice(this.r - 1, this.r - 1 + this.nr).map(row => row.slice(this.c - 1, this.c - 1 + this.nc).map(v => v instanceof Date ? new Date(v) : v)); }
+    setValues(vals) { this.sh._ensure(this.r + this.nr - 1, this.c + this.nc - 1); vals.forEach((row, i) => row.forEach((v, j) => { this.sh.data[this.r - 1 + i][this.c - 1 + j] = coerce(v); })); return this; }
+    setValue(v) { return this.setValues([[v]]); }
+  }
+  class Sheet {
+    constructor(name) { this.name = name; this.data = []; }
+    getName() { return this.name; } setName(n) { this.name = n; return this; }
+    getLastRow() { let n = this.data.length; while (n > 0 && this.data[n - 1].every(c => c === '' || c == null)) n--; return n; }
+    getLastColumn() { return this.data.reduce((m, r) => { let n = r.length; while (n > 0 && (r[n - 1] === '' || r[n - 1] == null)) n--; return Math.max(m, n); }, 0); }
+    _ensure(r, c) { while (this.data.length < r) this.data.push([]); this.data.forEach(row => { while (row.length < c) row.push(''); }); }
+    getRange(r, c, nr = 1, nc = 1) { return new Range(this, r, c, nr, nc); }
+    appendRow(a) { this.getRange(this.getLastRow() + 1, 1, 1, a.length).setValues([a]); return this; }
+    setFrozenRows() { return this; }
+    copyTo(ss) { const s = ss.insertSheet('Copy ' + Date.now()); s.data = this.data.map(r => r.slice()); return s; }
+    protect() { const p = { e: [], setDescription() { return p; }, addEditor() { return p; }, removeEditors() { return p; }, getEditors() { return []; }, canDomainEdit() { return false; }, setDomainEdit() { return p; } }; return p; }
+  }
+  const ss = { sheets: [], getId: () => 'DEMO', getSpreadsheetTimeZone: () => 'Asia/Kuala_Lumpur',
+    getSheetByName(n) { return this.sheets.find(s => s.name === n) || null; },
+    insertSheet(n) { const s = new Sheet(n); this.sheets.push(s); return s; } };
+  let props = {};
+  const cache = {};
+  const fail = {};
+  const env = { emel: '' };
+
+  const uuid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+  const SpreadsheetApp = { getActiveSpreadsheet: () => ss, openById: () => ss, getUi: () => { throw new Error('tiada UI'); } };
+  const PropertiesService = { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); } }) };
+  const CacheService = { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = String(v); }, remove: k => { delete cache[k]; } }) };
+  const LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
+  const Session = { getActiveUser: () => ({ getEmail: () => env.emel }), getEffectiveUser: () => ({ getEmail: () => 'imran@' + DOMAIN }), getScriptTimeZone: () => 'Asia/Kuala_Lumpur' };
+  const Utilities = {
+    getUuid: uuid, formatDate: fmtDate,
+    base64Decode: s => { const b = atob(s); const a = new Array(b.length); for (let i = 0; i < b.length; i++) { const c = b.charCodeAt(i); a[i] = c > 127 ? c - 256 : c; } return a; },
+    newBlob: (bytes, type, name) => ({ bytes, type, name })
+  };
+  const DriveApp = { getFolderById: () => ({ createFile: (blob) => {
+    const id = 'DEMO' + Date.now(); const u8 = new Uint8Array(blob.bytes.map(b => b & 255));
+    fail[id] = URL.createObjectURL(new Blob([u8], { type: 'application/pdf' }));
+    return { getUrl: () => fail[id], getId: () => id, setDescription: () => {} };
+  } }) };
+  const HtmlService = {};
+  const console_ = window.console;
+
+  // ---------- Kod Apps Script sebenar ----------
+  const GAS = (function (SpreadsheetApp, PropertiesService, CacheService, LockService, Session, Utilities, DriveApp, HtmlService, console) {
+    /**
+ * e-STOK JHEAIPP V3 — Pengurusan Inventori Bersepadu UPK & PAD
+ * Fasa 0 (persediaan & migrasi) + Fasa 1 (keselamatan & operasi asas)
+ *
+ * Code.gs — titik masuk aplikasi, konfigurasi dan penghala API.
+ *
+ * Model keselamatan:
+ *  - Web app di-deploy "Execute as: Me" + "Anyone within <domain jabatan>".
+ *  - Identiti pengguna = emel Google kerajaan yang dibaca di server (Session.getActiveUser()).
+ *    Frontend tidak menghantar identiti; ia tidak boleh dipalsukan dari pelayar.
+ *  - Peranan & lokasi dibaca dari helaian PENGGUNA pada SETIAP panggilan API.
+ */
+
+const APP = {
+  NAMA: 'e-STOK JHEAIPP V3',
+  VERSI: '3.1.0',
+  VERSI_SKEMA: '1',
+  TZ: 'Asia/Kuala_Lumpur',
+  FOLDER_ARKIB_ASAL: '1QNIzaUx8kgbMTPlpej8CCBKnDO0OKeoz'
+};
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('e-Stok JHEAIPP V3')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+}
+
+/** Menu dalam Google Sheets untuk pentadbir (setup & migrasi). */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('e-Stok V3')
+    .addItem('1. Setup / migrasi V3', 'setupV3')
+    .addItem('2. Daftar saya sebagai Admin pertama', 'setupFirstAdmin')
+    .addSeparator()
+    .addItem('Semak integriti data', 'semakIntegriti')
+    .addToUi();
+}
+
+/**
+ * Satu-satunya fungsi yang dipanggil oleh frontend melalui google.script.run.
+ * Input & output dalam bentuk JSON string (elak masalah Date tidak boleh dihantar).
+ */
+function api(requestJson) {
+  let req;
+  try {
+    SETTINGS_MEMO_ = null;
+    req = JSON.parse(requestJson || '{}');
+    const user = currentUser_(); // lempar ralat jika emel tidak berdaftar / tidak aktif
+    const p = req.payload || {};
+    let data;
+    switch (req.action) {
+      case 'bootstrap':        data = bootstrap_(user); break;
+      case 'transaksi':        data = getTransactions_(user); break;
+      case 'tambah':           data = withLock_(() => saveTransaction_(user, p)); break;
+      case 'pindahan':         data = withLock_(() => saveTransfer_(user, p)); break;
+      case 'kemaskini':        data = withLock_(() => updateTransaction_(user, p)); break;
+      case 'batal':            data = withLock_(() => voidTransaction_(user, p)); break;
+      case 'pengguna_senarai': data = listUsers_(user); break;
+      case 'pengguna_simpan':  data = withLock_(() => saveUser_(user, p)); break;
+      case 'audit':            data = getAuditLog_(user, p); break;
+      case 'upload_pdf':       data = uploadToDrive_(user, p); break;
+      default: throw new AppError_('TINDAKAN_TIDAK_SAH', 'Tindakan tidak dibenarkan.');
+    }
+    return JSON.stringify({ ok: true, data: data });
+  } catch (err) {
+    const kod = err && err.kod ? err.kod : 'RALAT';
+    if (kod === 'RALAT') console.error(err && err.stack ? err.stack : err);
+    return JSON.stringify({ ok: false, kod: kod, mesej: String(err && err.message ? err.message : err) });
+  }
+}
+
+function bootstrap_(user) {
+  logAccessOncePerDay_(user);
+  return {
+    pengguna: publicUser_(user),
+    kebenaran: permissionsFor_(user),
+    tetapan: getSettings_(),
+    versi: APP.VERSI,
+    hariIni: Utilities.formatDate(new Date(), APP.TZ, 'yyyy-MM-dd')
+  };
+}
+
+/** Ralat yang mesejnya selamat dipaparkan kepada pengguna. */
+function AppError_(kod, mesej) {
+  this.kod = kod;
+  this.message = mesej;
+  this.stack = (new Error(mesej)).stack;
+}
+AppError_.prototype = Object.create(Error.prototype);
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new AppError_('SIBUK', 'Sistem sedang memproses rekod lain. Sila cuba semula.');
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+;
+/**
+ * Database.gs — struktur helaian, akses Google Sheets dan migrasi Fasa 0.
+ *
+ * Prinsip migrasi:
+ *  - Lajur 1–12 helaian TRANSAKSI (format V2) tidak diubah kedudukannya.
+ *  - Lajur baharu ditambah di hujung dan dicari ikut NAMA tajuk, jadi setup boleh dijalankan berulang kali.
+ *  - setupV3() membuat salinan sandaran TRANSAKSI sebelum menyentuh apa-apa.
+ */
+
+const SH = {
+  TRANSAKSI: 'TRANSAKSI',
+  PENGGUNA: 'PENGGUNA',
+  AUDIT: 'AUDIT_LOG',
+  TETAPAN: 'TETAPAN',
+  ARKIB: 'ARKIB_LAPORAN'
+};
+
+// Lajur V2 (kedudukan tetap, 1-based) — tajuk lalai hanya diisi jika sel tajuk kosong.
+const TX_LAMA = [
+  ['tarikh', 'Tarikh'], ['lokasi', 'Lokasi'], ['item', 'Item'], ['jenis', 'Jenis Transaksi'], ['arah', 'Arah'],
+  ['kuantiti', 'Kuantiti'], ['siriKursus', 'Siri Kursus'], ['jumlahPeserta', 'Jumlah Peserta'], ['rujukan', 'No Rujukan'],
+  ['id', 'ID'], ['direkodOleh', 'Direkod Oleh'], ['catatan', 'Catatan']
+];
+// Lajur V3 (dicari ikut tajuk, ditambah jika tiada).
+const TX_BARU = [
+  ['status', 'Status'], ['diciptaPada', 'Dicipta Pada'], ['emelPerekod', 'Emel Perekod'],
+  ['dikemaskiniOleh', 'Dikemaskini Oleh'], ['dikemaskiniPada', 'Dikemaskini Pada'],
+  ['dibatalOleh', 'Dibatal Oleh'], ['dibatalPada', 'Dibatal Pada'], ['sebabBatal', 'Sebab Batal'], ['pasangan', 'Pasangan']
+];
+
+const HEADERS = {
+  PENGGUNA: ['Emel', 'Nama Penuh', 'Jawatan', 'Peranan', 'Lokasi', 'Status', 'Akses Terakhir', 'Dicipta Oleh', 'Dicipta Pada', 'Dikemaskini Oleh', 'Dikemaskini Pada'],
+  AUDIT: ['Masa', 'Emel', 'Nama', 'Peranan', 'Lokasi Pengguna', 'Tindakan', 'Jenis Rekod', 'ID Rekod', 'Sebelum', 'Selepas', 'Sebab'],
+  TETAPAN: ['Jenis', 'Nilai', 'Nilai 2', 'Susunan', 'Aktif', 'Keterangan'],
+  ARKIB: ['Masa', 'Lokasi', 'Bulan', 'Nama Fail', 'URL', 'ID Fail', 'Dijana Oleh']
+};
+
+const LOKASI_ASAL = [
+  ['UPK BUUKI (HQ)', 'UPK'],
+  ['Daerah Seberang Perai Tengah', 'SPT'],
+  ['Daerah Seberang Perai Selatan', 'SPS'],
+  ['Daerah Barat Daya', 'BD'],
+  ['Daerah SPU (Butterworth)', 'SPU-BW'],
+  ['Daerah SPU (Kepala Batas)', 'SPU-KB'],
+  ['Daerah Timur Laut', 'TL']
+];
+const ITEM_ASAL = [
+  ['Sijil', 100], ['Buku Gerbang Perkahwinan', 100], ['Beg', 50], ['Pen', 100], ['Buku Nota', 100],
+  ['Gula-gula (Balang)', 5], ['Mineral (Karton)', 5], ['Kertas A4 (Kotak)', 2], ['Others', 0], ['Cabutan Sijil', 0]
+];
+// Nama item lama yang dinormalkan semasa dibaca (data asal tidak diubah).
+const ALIAS_ITEM = { 'Mineral': 'Mineral (Karton)', 'Kertas A4': 'Kertas A4 (Kotak)' };
+
+// ---------------------------------------------------------------------------
+// Akses asas
+// ---------------------------------------------------------------------------
+function getSs_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function sheet_(nama) {
+  const sh = getSs_().getSheetByName(nama);
+  if (!sh) throw new AppError_('BELUM_SETUP', 'Helaian ' + nama + ' tiada. Pentadbir perlu jalankan setupV3().');
+  return sh;
+}
+
+function ensureSheet_(ss, nama, headers) {
+  let sh = ss.getSheetByName(nama);
+  let baru = false;
+  if (!sh) {
+    sh = ss.insertSheet(nama);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+    baru = true;
+  }
+  return { sh: sh, baru: baru };
+}
+
+/** Peta lajur TRANSAKSI: kunci → nombor lajur (1-based). */
+function txCols_(sh) {
+  const lastCol = Math.max(sh.getLastColumn(), TX_LAMA.length);
+  const tajuk = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+  const peta = { _lebar: lastCol };
+  TX_LAMA.forEach((c, i) => { peta[c[0]] = i + 1; });
+  TX_BARU.forEach(c => {
+    const idx = tajuk.indexOf(c[1]);
+    if (idx >= 0) peta[c[0]] = idx + 1;
+  });
+  return peta;
+}
+
+function readRows_(sh, lebar) {
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, lebar).getValues();
+}
+
+// ---------------------------------------------------------------------------
+// Penukaran nilai
+// ---------------------------------------------------------------------------
+/** Semakan Date yang selamat merentas konteks (lebih tahan lasak daripada instanceof). */
+function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
+
+function toIsoDate_(v) {
+  if (isDate_(v)) return Utilities.formatDate(v, APP.TZ, 'yyyy-MM-dd');
+  const s = String(v == null ? '' : v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); // DD/MM/YYYY
+  if (m) return m[3] + '-' + pad2_(m[2]) + '-' + pad2_(m[1]);
+  return s;
+}
+function toDateTimeStr_(v) {
+  if (isDate_(v)) return Utilities.formatDate(v, APP.TZ, 'yyyy-MM-dd HH:mm:ss');
+  return String(v == null ? '' : v);
+}
+function isoToDate_(iso) {
+  const p = iso.split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2]);
+}
+function nowStr_() { return Utilities.formatDate(new Date(), APP.TZ, 'yyyy-MM-dd HH:mm:ss'); }
+function pad2_(x) { return ('0' + x).slice(-2); }
+function clean_(v, max) { const s = String(v == null ? '' : v).trim(); return max ? s.slice(0, max) : s; }
+/** Elak formula injection: nilai bermula = + - @ disimpan sebagai teks. */
+function safe_(v) { const s = String(v == null ? '' : v); return /^[=+\-@]/.test(s) ? "'" + s : s; }
+function newId_(prefix) {
+  return prefix + '-' + Utilities.formatDate(new Date(), APP.TZ, 'yyMMdd') + '-' +
+    Utilities.getUuid().replace(/-/g, '').slice(0, 6).toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// TETAPAN
+// ---------------------------------------------------------------------------
+let SETTINGS_MEMO_ = null;
+function getSettings_() {
+  if (SETTINGS_MEMO_) return SETTINGS_MEMO_;
+  const rows = readRows_(sheet_(SH.TETAPAN), HEADERS.TETAPAN.length);
+  const aktif = rows.filter(r => r[0] && String(r[4]).toUpperCase() !== 'TIDAK')
+    .sort((a, b) => (Number(a[3]) || 0) - (Number(b[3]) || 0));
+  const konfig = {};
+  aktif.filter(r => r[0] === 'KONFIG').forEach(r => { konfig[String(r[1])] = String(r[2]); });
+  SETTINGS_MEMO_ = {
+    items: aktif.filter(r => r[0] === 'ITEM').map(r => ({ nama: String(r[1]), stokMin: Number(r[2]) || 0 })),
+    lokasi: aktif.filter(r => r[0] === 'LOKASI').map(r => ({ nama: String(r[1]), kod: String(r[2]) })),
+    konfig: konfig
+  };
+  return SETTINGS_MEMO_;
+}
+function setKonfig_(kunci, nilai) {
+  const sh = sheet_(SH.TETAPAN);
+  const rows = readRows_(sh, HEADERS.TETAPAN.length);
+  const i = rows.findIndex(r => r[0] === 'KONFIG' && String(r[1]) === kunci);
+  if (i >= 0) sh.getRange(i + 2, 3).setValue(nilai);
+  else sh.appendRow(['KONFIG', kunci, nilai, 99, 'YA', '']);
+  SETTINGS_MEMO_ = null;
+}
+function lokasiHQ_() { return getSettings_().lokasi[0].nama; } // lokasi pertama = UPK HQ
+
+// ---------------------------------------------------------------------------
+// FASA 0 — SETUP & MIGRASI (dijalankan oleh pemilik skrip)
+// ---------------------------------------------------------------------------
+function setupV3() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet() || getSs_();
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('SPREADSHEET_ID', ss.getId());
+  const laporan = [];
+
+  const tx = ss.getSheetByName(SH.TRANSAKSI);
+  if (!tx) throw new Error('Helaian TRANSAKSI tidak dijumpai. Pastikan skrip dibuka dari Google Sheets e-Stok.');
+
+  // 1. Sandaran
+  const namaBackup = 'BACKUP_TRANSAKSI_' + Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd_HHmm');
+  if (!ss.getSheetByName(namaBackup)) tx.copyTo(ss).setName(namaBackup);
+  laporan.push('Sandaran dibuat: ' + namaBackup);
+
+  // 2. Tajuk lajur
+  const lastCol = Math.max(tx.getLastColumn(), TX_LAMA.length);
+  const tajuk = tx.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+  TX_LAMA.forEach((c, i) => { if (!tajuk[i]) { tx.getRange(1, i + 1).setValue(c[1]); tajuk[i] = c[1]; } });
+  const ditambah = [];
+  TX_BARU.forEach(c => {
+    if (tajuk.indexOf(c[1]) < 0) {
+      tajuk.push(c[1]);
+      tx.getRange(1, tajuk.length).setValue(c[1]);
+      ditambah.push(c[1]);
+    }
+  });
+  laporan.push(ditambah.length ? 'Lajur baharu ditambah: ' + ditambah.join(', ') : 'Lajur V3 sudah wujud.');
+
+  // 3. ID & status untuk rekod lama
+  const cols = txCols_(tx);
+  const rows = readRows_(tx, cols._lebar);
+  let idBaru = 0, statusBaru = 0;
+  const lajurId = rows.map(r => [r[cols.id - 1]]);
+  const lajurStatus = rows.map(r => [r[cols.status - 1]]);
+  const itemDijumpai = {};
+  rows.forEach((r, i) => {
+    if (!r[0]) return; // baris kosong
+    if (!String(r[cols.id - 1]).trim()) { lajurId[i][0] = 'LGC-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(); idBaru++; }
+    if (!String(r[cols.status - 1]).trim()) { lajurStatus[i][0] = 'AKTIF'; statusBaru++; }
+    const it = ALIAS_ITEM[String(r[cols.item - 1])] || String(r[cols.item - 1]);
+    if (it) itemDijumpai[it] = true;
+  });
+  if (rows.length) {
+    tx.getRange(2, cols.id, rows.length, 1).setValues(lajurId);
+    tx.getRange(2, cols.status, rows.length, 1).setValues(lajurStatus);
+  }
+  laporan.push('Rekod sedia ada: ' + rows.filter(r => r[0]).length + ' · ID dijana: ' + idBaru + ' · Status AKTIF diisi: ' + statusBaru);
+
+  // 4. Helaian sokongan
+  [[SH.PENGGUNA, HEADERS.PENGGUNA], [SH.AUDIT, HEADERS.AUDIT], [SH.ARKIB, HEADERS.ARKIB]].forEach(x => {
+    const r = ensureSheet_(ss, x[0], x[1]);
+    laporan.push(x[0] + (r.baru ? ' dicipta.' : ' sudah wujud.'));
+  });
+  const t = ensureSheet_(ss, SH.TETAPAN, HEADERS.TETAPAN);
+  if (t.baru) {
+    const seed = [];
+    LOKASI_ASAL.forEach((l, i) => seed.push(['LOKASI', l[0], l[1], i + 1, 'YA', '']));
+    const namaItem = ITEM_ASAL.map(x => x[0]);
+    ITEM_ASAL.forEach((it, i) => seed.push(['ITEM', it[0], it[1], i + 1, 'YA', 'Nilai 2 = paras stok minimum']));
+    Object.keys(itemDijumpai).filter(n => namaItem.indexOf(n) < 0).forEach((n, i) => {
+      seed.push(['ITEM', n, 0, 100 + i, 'YA', 'Ditemui dalam data lama semasa migrasi']);
+    });
+    seed.push(['KONFIG', 'FOLDER_ARKIB_ID', APP.FOLDER_ARKIB_ASAL, 1, 'YA', 'Folder Google Drive arkib laporan PDF']);
+    seed.push(['KONFIG', 'NO_FAIL', '', 2, 'YA', 'No. fail rasmi pada laporan']);
+    seed.push(['KONFIG', 'DOMAIN_EMEL', '', 3, 'YA', 'Hanya emel domain ini dibenarkan (diisi automatik oleh setupFirstAdmin)']);
+    seed.push(['KONFIG', 'VERSI_SKEMA', APP.VERSI_SKEMA, 4, 'YA', 'Jangan ubah']);
+    t.sh.getRange(2, 1, seed.length, HEADERS.TETAPAN.length).setValues(seed);
+    laporan.push('TETAPAN dicipta dengan ' + LOKASI_ASAL.length + ' lokasi dan ' + seed.filter(s => s[0] === 'ITEM').length + ' item.');
+  } else {
+    laporan.push('TETAPAN sudah wujud (tidak diubah).');
+  }
+
+  // 5. Lindungi helaian sensitif (hanya pemilik boleh edit terus)
+  [SH.PENGGUNA, SH.AUDIT, SH.TETAPAN].forEach(n => protectOwnerOnly_(ss.getSheetByName(n), laporan));
+
+  // 6. Zon masa
+  const tzSheet = ss.getSpreadsheetTimeZone();
+  const tzSkrip = Session.getScriptTimeZone();
+  if (tzSheet !== APP.TZ || tzSkrip !== APP.TZ) {
+    laporan.push('AMARAN zon masa: Sheet=' + tzSheet + ', Skrip=' + tzSkrip + '. Tetapkan kedua-duanya kepada ' + APP.TZ + ' (File > Settings dan appsscript.json).');
+  } else {
+    laporan.push('Zon masa OK (' + APP.TZ + ').');
+  }
+
+  SETTINGS_MEMO_ = null;
+  writeAuditLog_(systemUser_(), 'SETUP_V3', 'SISTEM', '', null, { laporan: laporan }, '');
+  return showReport_('Setup V3 selesai', laporan);
+}
+
+function protectOwnerOnly_(sh, laporan) {
+  try {
+    const p = sh.protect().setDescription('e-Stok V3: hanya pemilik skrip. Ubah melalui sistem.');
+    p.addEditor(Session.getEffectiveUser());
+    p.removeEditors(p.getEditors().filter(e => e.getEmail() !== Session.getEffectiveUser().getEmail()));
+    if (p.canDomainEdit()) p.setDomainEdit(false);
+  } catch (e) {
+    laporan.push('Tidak dapat lindungi ' + sh.getName() + ': ' + e.message);
+  }
+}
+
+/** Semakan integriti — boleh dijalankan bila-bila masa dari menu. */
+function semakIntegriti() {
+  const sh = sheet_(SH.TRANSAKSI);
+  const cols = txCols_(sh);
+  const s = getSettings_();
+  const namaItem = s.items.map(i => i.nama), namaLokasi = s.lokasi.map(l => l.nama);
+  const rows = readRows_(sh, cols._lebar);
+  const isu = [];
+  const ids = {};
+  const baki = {};
+  rows.forEach((r, i) => {
+    if (!r[0]) return;
+    const baris = i + 2;
+    const t = rowToTx_(r, cols);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.tarikh)) isu.push('Baris ' + baris + ': tarikh tidak sah (' + t.tarikh + ')');
+    if (!t.id) isu.push('Baris ' + baris + ': tiada ID');
+    else if (ids[t.id]) isu.push('Baris ' + baris + ': ID berganda dengan baris ' + ids[t.id]);
+    else ids[t.id] = baris;
+    if (namaItem.indexOf(t.item) < 0) isu.push('Baris ' + baris + ': item tidak dikenali "' + t.item + '"');
+    if (namaLokasi.indexOf(t.lokasi) < 0) isu.push('Baris ' + baris + ': lokasi tidak dikenali "' + t.lokasi + '"');
+    if (!(t.kuantiti > 0)) isu.push('Baris ' + baris + ': kuantiti tidak sah (' + r[cols.kuantiti - 1] + ')');
+    if (t.status === 'AKTIF') {
+      const k = t.lokasi + ' | ' + t.item;
+      baki[k] = (baki[k] || 0) + (t.arah === 'Masuk' ? t.kuantiti : -t.kuantiti);
+    }
+  });
+  Object.keys(baki).forEach(k => { if (baki[k] < 0) isu.push('Baki negatif: ' + k + ' = ' + baki[k]); });
+  const ringkas = ['Rekod disemak: ' + rows.filter(r => r[0]).length, 'Isu dijumpai: ' + isu.length].concat(isu.slice(0, 50));
+  if (isu.length > 50) ringkas.push('… dan ' + (isu.length - 50) + ' isu lagi (lihat Logger).');
+  isu.forEach(x => console.log(x));
+  return showReport_('Semakan integriti', ringkas);
+}
+
+function showReport_(tajuk, baris) {
+  const teks = baris.join('\n');
+  console.log(tajuk + '\n' + teks);
+  try { SpreadsheetApp.getUi().alert(tajuk, teks, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) { /* dijalankan dari editor */ }
+  return { tajuk: tajuk, baris: baris };
+}
+
+;
+/**
+ * Auth.gs — identiti pengguna (emel Google kerajaan), peranan, kebenaran dan pengurusan akaun.
+ *
+ * Tiada kata laluan disimpan. Google mengesahkan siapa pengguna; sistem ini menentukan
+ * apa yang pengguna itu boleh buat berdasarkan helaian PENGGUNA.
+ */
+
+const PERANAN = {
+  ADMIN_UPK:    { label: 'Admin UPK',     lihatSemua: true,  tulis: 'SEMUA',   urusPengguna: true,  audit: true,  lokasiHQ: true },
+  KERANI_UPK:   { label: 'Kerani UPK',    lihatSemua: true,  tulis: 'SENDIRI', urusPengguna: false, audit: false, lokasiHQ: true },
+  PEMANTAU_UPK: { label: 'Pemantau UPK',  lihatSemua: true,  tulis: 'TIADA',   urusPengguna: false, audit: false, lokasiHQ: true },
+  KERANI_PAD:   { label: 'Kerani PAD',    lihatSemua: false, tulis: 'SENDIRI', urusPengguna: false, audit: false, lokasiHQ: false },
+  PEGAWAI_PAD:  { label: 'Pegawai PAD',   lihatSemua: false, tulis: 'TIADA',   urusPengguna: false, audit: false, lokasiHQ: false }
+};
+const KOL_PENGGUNA = { emel: 1, nama: 2, jawatan: 3, peranan: 4, lokasi: 5, status: 6, aksesTerakhir: 7, diciptaOleh: 8, diciptaPada: 9, dikemaskiniOleh: 10, dikemaskiniPada: 11 };
+
+// ---------------------------------------------------------------------------
+// Identiti
+// ---------------------------------------------------------------------------
+function currentUser_() {
+  const emel = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!emel) {
+    throw new AppError_('TIADA_EMEL', 'Sistem tidak dapat mengenal pasti akaun Google anda. Pastikan anda log masuk dengan emel jabatan, kemudian muat semula halaman.');
+  }
+  const domain = String(getSettings_().konfig.DOMAIN_EMEL || '').trim().toLowerCase();
+  if (domain && emel.split('@')[1] !== domain) {
+    throw new AppError_('DOMAIN_DITOLAK', 'Akaun ' + emel + ' bukan emel jabatan (@' + domain + '). Sila log masuk dengan emel kerajaan.');
+  }
+  const u = findUser_(emel);
+  if (!u) throw new AppError_('TIADA_AKSES', 'Emel ' + emel + ' belum didaftarkan dalam e-Stok. Sila hubungi Admin UPK untuk akses.');
+  if (u.status !== 'AKTIF') throw new AppError_('TIDAK_AKTIF', 'Akaun ' + emel + ' telah dinyahaktifkan. Sila hubungi Admin UPK.');
+  if (!PERANAN[u.peranan]) throw new AppError_('PERANAN_TIDAK_SAH', 'Peranan akaun anda tidak sah. Sila hubungi Admin UPK.');
+  return u;
+}
+
+function readUsers_() {
+  const sh = sheet_(SH.PENGGUNA);
+  return readRows_(sh, HEADERS.PENGGUNA.length).map((r, i) => ({
+    baris: i + 2,
+    emel: String(r[0]).trim().toLowerCase(),
+    nama: String(r[1]),
+    jawatan: String(r[2]),
+    peranan: String(r[3]).trim().toUpperCase(),
+    lokasi: String(r[4]),
+    status: String(r[5]).trim().toUpperCase() || 'AKTIF',
+    aksesTerakhir: toDateTimeStr_(r[6]),
+    diciptaOleh: String(r[7]),
+    diciptaPada: toDateTimeStr_(r[8]),
+    dikemaskiniOleh: String(r[9]),
+    dikemaskiniPada: toDateTimeStr_(r[10])
+  })).filter(u => u.emel);
+}
+function findUser_(emel) { return readUsers_().find(u => u.emel === emel) || null; }
+
+function publicUser_(u) {
+  return { emel: u.emel, nama: u.nama, jawatan: u.jawatan, peranan: u.peranan, labelPeranan: PERANAN[u.peranan].label, lokasi: u.lokasi };
+}
+function systemUser_() {
+  let emel = '';
+  try { emel = Session.getEffectiveUser().getEmail(); } catch (e) {}
+  return { emel: emel, nama: 'SISTEM (pentadbir skrip)', peranan: 'SISTEM', lokasi: '' };
+}
+
+// ---------------------------------------------------------------------------
+// Kebenaran — SATU-SATUNYA tempat peraturan akses ditentukan
+// ---------------------------------------------------------------------------
+function canView_(u, lokasi) { return PERANAN[u.peranan].lihatSemua || u.lokasi === lokasi; }
+function canWrite_(u, lokasi) {
+  const t = PERANAN[u.peranan].tulis;
+  return t === 'SEMUA' || (t === 'SENDIRI' && u.lokasi === lokasi);
+}
+function requireWrite_(u, lokasi) {
+  if (!canWrite_(u, lokasi)) throw new AppError_('DILARANG', 'Anda tiada kebenaran merekod atau mengubah stok bagi ' + lokasi + '.');
+}
+function requireAdmin_(u) {
+  if (!PERANAN[u.peranan].urusPengguna) throw new AppError_('DILARANG', 'Fungsi ini terhad kepada Admin UPK.');
+}
+function permissionsFor_(u) {
+  const r = PERANAN[u.peranan];
+  const semua = getSettings_().lokasi.map(l => l.nama);
+  return {
+    lihatSemua: r.lihatSemua,
+    lokasiDilihat: r.lihatSemua ? semua : [u.lokasi],
+    lokasiDitulis: r.tulis === 'SEMUA' ? semua : (r.tulis === 'SENDIRI' ? [u.lokasi] : []),
+    urusPengguna: r.urusPengguna,
+    audit: r.audit,
+    paksaBaki: u.peranan === 'ADMIN_UPK'
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pengurusan akaun (Admin UPK)
+// ---------------------------------------------------------------------------
+function listUsers_(admin) {
+  requireAdmin_(admin);
+  return {
+    pengguna: readUsers_().map(u => { const x = Object.assign({}, u); delete x.baris; return x; }),
+    peranan: Object.keys(PERANAN).map(k => ({ kod: k, label: PERANAN[k].label, lokasiHQ: PERANAN[k].lokasiHQ }))
+  };
+}
+
+function saveUser_(admin, p) {
+  requireAdmin_(admin);
+  const emel = clean_(p.emel).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emel)) throw new AppError_('INPUT', 'Format emel tidak sah.');
+  const domain = String(getSettings_().konfig.DOMAIN_EMEL || '').toLowerCase();
+  if (domain && emel.split('@')[1] !== domain) throw new AppError_('INPUT', 'Hanya emel @' + domain + ' boleh didaftarkan.');
+  const nama = clean_(p.nama, 120);
+  if (nama.length < 3) throw new AppError_('INPUT', 'Nama penuh diperlukan.');
+  const peranan = clean_(p.peranan).toUpperCase();
+  if (!PERANAN[peranan]) throw new AppError_('INPUT', 'Peranan tidak sah.');
+  const hq = lokasiHQ_();
+  let lokasi = clean_(p.lokasi);
+  if (PERANAN[peranan].lokasiHQ) lokasi = hq;
+  if (getSettings_().lokasi.map(l => l.nama).indexOf(lokasi) < 0) throw new AppError_('INPUT', 'Lokasi tidak sah.');
+  if (!PERANAN[peranan].lokasiHQ && lokasi === hq) throw new AppError_('INPUT', 'Peranan PAD mesti ditetapkan kepada lokasi daerah, bukan HQ.');
+  const status = clean_(p.status || 'AKTIF').toUpperCase();
+  if (['AKTIF', 'TIDAK_AKTIF'].indexOf(status) < 0) throw new AppError_('INPUT', 'Status tidak sah.');
+
+  const semua = readUsers_();
+  const sedia = semua.find(u => u.emel === emel);
+  if (p.baru && sedia) throw new AppError_('INPUT', 'Emel ini sudah didaftarkan.');
+  if (!p.baru && !sedia) throw new AppError_('INPUT', 'Akaun tidak dijumpai.');
+
+  // Elak sistem tanpa pentadbir: admin tidak boleh turunkan / nyahaktif diri sendiri,
+  // dan mesti kekal sekurang-kurangnya seorang Admin UPK aktif.
+  if (sedia && sedia.emel === admin.emel && (peranan !== 'ADMIN_UPK' || status !== 'AKTIF')) {
+    throw new AppError_('DILARANG', 'Anda tidak boleh menukar peranan atau menyahaktifkan akaun sendiri.');
+  }
+  if (sedia && sedia.peranan === 'ADMIN_UPK' && (peranan !== 'ADMIN_UPK' || status !== 'AKTIF')) {
+    const adminAktif = semua.filter(u => u.peranan === 'ADMIN_UPK' && u.status === 'AKTIF').length;
+    if (adminAktif <= 1) throw new AppError_('DILARANG', 'Sistem mesti mempunyai sekurang-kurangnya seorang Admin UPK aktif.');
+  }
+
+  const sh = sheet_(SH.PENGGUNA);
+  const kini = nowStr_();
+  const baris = [safe_(emel), safe_(nama), safe_(clean_(p.jawatan, 120)), peranan, safe_(lokasi), status,
+    sedia ? sedia.aksesTerakhir : '', sedia ? sedia.diciptaOleh : admin.emel, sedia ? sedia.diciptaPada : kini, admin.emel, kini];
+  if (sedia) sh.getRange(sedia.baris, 1, 1, baris.length).setValues([baris]);
+  else sh.appendRow(baris);
+
+  const ringkas = u => u ? { emel: u.emel, nama: u.nama, jawatan: u.jawatan, peranan: u.peranan, lokasi: u.lokasi, status: u.status } : null;
+  writeAuditLog_(admin, sedia ? 'KEMASKINI_PENGGUNA' : 'TAMBAH_PENGGUNA', 'PENGGUNA', emel, ringkas(sedia),
+    { emel: emel, nama: nama, jawatan: clean_(p.jawatan, 120), peranan: peranan, lokasi: lokasi, status: status }, '');
+  return listUsers_(admin);
+}
+
+function logAccessOncePerDay_(u) {
+  const kunci = 'akses_' + u.emel + '_' + Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd');
+  const cache = CacheService.getScriptCache();
+  if (cache.get(kunci)) return;
+  cache.put(kunci, '1', 21600);
+  sheet_(SH.PENGGUNA).getRange(u.baris, KOL_PENGGUNA.aksesTerakhir).setValue(nowStr_());
+  writeAuditLog_(u, 'AKSES_SISTEM', 'PENGGUNA', u.emel, null, null, '');
+}
+
+// ---------------------------------------------------------------------------
+// FASA 1 — Admin pertama (dijalankan sekali oleh pemilik skrip dari menu Sheet)
+// ---------------------------------------------------------------------------
+function setupFirstAdmin() {
+  const emel = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  if (!emel) throw new Error('Tidak dapat membaca emel anda. Jalankan dari akaun Google jabatan.');
+  const users = readUsers_();
+  if (users.some(u => u.peranan === 'ADMIN_UPK' && u.status === 'AKTIF')) {
+    return showReport_('Admin sudah wujud', ['Admin UPK aktif sudah wujud. Tambah admin lain melalui menu Pengguna dalam sistem.']);
+  }
+  let nama = 'Pentadbir Sistem';
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const r = ui.prompt('Admin pertama', 'Nama penuh anda (untuk ' + emel + '):', ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return null;
+    nama = clean_(r.getResponseText(), 120) || nama;
+  } catch (e) { /* dari editor: guna nama lalai, boleh dikemaskini dalam sistem */ }
+
+  const kini = nowStr_();
+  sheet_(SH.PENGGUNA).appendRow([emel, safe_(nama), 'Pentadbir Sistem e-Stok', 'ADMIN_UPK', lokasiHQ_(), 'AKTIF', '', emel, kini, emel, kini]);
+  if (!getSettings_().konfig.DOMAIN_EMEL) setKonfig_('DOMAIN_EMEL', emel.split('@')[1]);
+  writeAuditLog_(systemUser_(), 'TAMBAH_PENGGUNA', 'PENGGUNA', emel, null, { emel: emel, nama: nama, peranan: 'ADMIN_UPK' }, 'Admin pertama');
+  return showReport_('Admin pertama didaftarkan', [
+    emel + ' kini Admin UPK.',
+    'Domain emel dikunci kepada: @' + emel.split('@')[1],
+    'Langkah seterusnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone within domain).'
+  ]);
+}
+
+;
+/**
+ * Inventory.gs — transaksi stok: baca, tambah, pindahan, kemaskini dan pembatalan.
+ *
+ * Peraturan ketepatan:
+ *  - Rekod tidak dipadam. Pembatalan menukar Status kepada BATAL dengan sebab, dan rekod BATAL
+ *    tidak dikira dalam baki.
+ *  - Setiap perubahan (tambah, edit, batal) disimulasi dahulu; jika ia menyebabkan baki mana-mana
+ *    lokasi/item menjadi negatif, ia ditolak (Admin UPK boleh paksa dengan pengesahan).
+ *  - Pindahan antara lokasi = dua baris berpasangan yang ditulis dalam satu operasi.
+ */
+
+const JENIS_MASUK = ['Terima Pembekal', 'Pindahan Masuk', 'Pelarasan (+)'];
+const JENIS_SAH = ['Terima Pembekal', 'Pindahan Masuk', 'Pindahan Keluar', 'Pengeluaran Kursus', 'Pelarasan (+)', 'Pelarasan (-)', 'Cabutan Sijil'];
+
+// ---------------------------------------------------------------------------
+// Baca
+// ---------------------------------------------------------------------------
+function rowToTx_(r, c) {
+  const g = k => (c[k] ? r[c[k] - 1] : '');
+  const jenis = String(g('jenis')).trim();
+  const arahAsal = String(g('arah')).trim();
+  const item = String(g('item')).trim();
+  return {
+    id: String(g('id')).trim(),
+    tarikh: toIsoDate_(g('tarikh')),
+    lokasi: String(g('lokasi')).trim(),
+    item: ALIAS_ITEM[item] || item,
+    jenis: jenis,
+    arah: arahAsal === 'Masuk' || arahAsal === 'Keluar' ? arahAsal : (JENIS_MASUK.indexOf(jenis) >= 0 ? 'Masuk' : 'Keluar'),
+    kuantiti: Number(g('kuantiti')) || 0,
+    siriKursus: String(g('siriKursus')),
+    jumlahPeserta: g('jumlahPeserta') === '' ? '' : Number(g('jumlahPeserta')),
+    rujukan: String(g('rujukan')),
+    direkodOleh: String(g('direkodOleh')),
+    catatan: String(g('catatan')),
+    status: String(g('status')).trim().toUpperCase() || 'AKTIF',
+    diciptaPada: toDateTimeStr_(g('diciptaPada')),
+    emelPerekod: String(g('emelPerekod')),
+    dikemaskiniOleh: String(g('dikemaskiniOleh')),
+    dikemaskiniPada: toDateTimeStr_(g('dikemaskiniPada')),
+    dibatalOleh: String(g('dibatalOleh')),
+    dibatalPada: toDateTimeStr_(g('dibatalPada')),
+    sebabBatal: String(g('sebabBatal')),
+    pasangan: String(g('pasangan')).trim()
+  };
+}
+
+function readTransactions_() {
+  const sh = sheet_(SH.TRANSAKSI);
+  const c = txCols_(sh);
+  if (!c.status) throw new AppError_('BELUM_SETUP', 'Struktur TRANSAKSI belum dinaik taraf. Pentadbir perlu jalankan setupV3().');
+  const rows = readRows_(sh, c._lebar);
+  const senarai = [];
+  rows.forEach((r, i) => { if (r[0]) senarai.push({ baris: i + 2, raw: r, t: rowToTx_(r, c) }); });
+  return { sh: sh, c: c, senarai: senarai };
+}
+
+function getTransactions_(u) {
+  const d = readTransactions_();
+  return {
+    transaksi: d.senarai.map(x => x.t).filter(t => canView_(u, t.lokasi)),
+    dibacaPada: nowStr_()
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tulis
+// ---------------------------------------------------------------------------
+function validateTx_(p) {
+  const s = getSettings_();
+  const tarikh = clean_(p.tarikh);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tarikh) || toIsoDate_(isoToDate_(tarikh)) !== tarikh) throw new AppError_('INPUT', 'Tarikh tidak sah.');
+  if (tarikh > Utilities.formatDate(new Date(), APP.TZ, 'yyyy-MM-dd')) throw new AppError_('INPUT', 'Tarikh tidak boleh melebihi hari ini.');
+  const lokasi = clean_(p.lokasi);
+  if (s.lokasi.map(l => l.nama).indexOf(lokasi) < 0) throw new AppError_('INPUT', 'Lokasi tidak sah.');
+  const item = clean_(p.item);
+  if (s.items.map(i => i.nama).indexOf(item) < 0) throw new AppError_('INPUT', 'Item tidak sah.');
+  const jenis = clean_(p.jenis);
+  if (JENIS_SAH.indexOf(jenis) < 0) throw new AppError_('INPUT', 'Jenis transaksi tidak sah.');
+  const kuantiti = Number(p.kuantiti);
+  if (!Number.isInteger(kuantiti) || kuantiti <= 0 || kuantiti > 1000000) throw new AppError_('INPUT', 'Kuantiti mesti nombor bulat antara 1 dan 1,000,000.');
+  const kursus = jenis === 'Pengeluaran Kursus';
+  let peserta = '';
+  if (kursus && p.jumlahPeserta !== '' && p.jumlahPeserta != null) {
+    peserta = Number(p.jumlahPeserta);
+    if (!Number.isInteger(peserta) || peserta < 0) throw new AppError_('INPUT', 'Jumlah peserta tidak sah.');
+  }
+  return {
+    tarikh: tarikh, lokasi: lokasi, item: item, jenis: jenis,
+    arah: JENIS_MASUK.indexOf(jenis) >= 0 ? 'Masuk' : 'Keluar',
+    kuantiti: kuantiti,
+    siriKursus: kursus ? clean_(p.siriKursus, 60) : '',
+    jumlahPeserta: peserta,
+    rujukan: clean_(p.rujukan, 80),
+    catatan: clean_(p.catatan, 500)
+  };
+}
+
+/**
+ * Simulasi baki: tolak jika perubahan menyebabkan baki (lokasi, item) menjadi negatif
+ * atau lebih negatif daripada sebelumnya.
+ */
+function checkStock_(u, aktif, buangIds, tambah, paksa) {
+  const kunci = t => t.lokasi + '||' + t.item;
+  const terlibat = {};
+  aktif.filter(t => buangIds.indexOf(t.id) >= 0).concat(tambah).forEach(t => { terlibat[kunci(t)] = true; });
+  const nilai = t => (t.arah === 'Masuk' ? t.kuantiti : -t.kuantiti);
+  const masalah = [];
+  Object.keys(terlibat).forEach(k => {
+    const sebelum = aktif.filter(t => kunci(t) === k).reduce((s, t) => s + nilai(t), 0);
+    const selepas = aktif.filter(t => kunci(t) === k && buangIds.indexOf(t.id) < 0).concat(tambah.filter(t => kunci(t) === k))
+      .reduce((s, t) => s + nilai(t), 0);
+    if (selepas < 0 && selepas < sebelum) {
+      const bahagian = k.split('||');
+      masalah.push(bahagian[1] + ' di ' + bahagian[0] + ': baki ' + sebelum + ' → ' + selepas);
+    }
+  });
+  if (!masalah.length) return [];
+  if (paksa && permissionsFor_(u).paksaBaki) return masalah;
+  throw new AppError_('BAKI_TIDAK_CUKUP', 'Baki tidak mencukupi. ' + masalah.join('; ') + '.');
+}
+
+function txToRow_(t, c, asal) {
+  const row = asal ? asal.slice() : new Array(c._lebar).fill('');
+  const set = (k, v) => { if (c[k]) row[c[k] - 1] = v; };
+  set('tarikh', isoToDate_(t.tarikh));
+  ['lokasi', 'item', 'jenis', 'siriKursus', 'rujukan', 'direkodOleh', 'catatan', 'emelPerekod', 'dikemaskiniOleh', 'dibatalOleh', 'sebabBatal']
+    .forEach(k => set(k, safe_(t[k])));
+  set('arah', t.arah);
+  set('kuantiti', Number(t.kuantiti));
+  set('jumlahPeserta', t.jumlahPeserta === '' || t.jumlahPeserta == null ? '' : Number(t.jumlahPeserta));
+  set('id', t.id);
+  set('status', t.status);
+  set('diciptaPada', t.diciptaPada || '');
+  set('dikemaskiniPada', t.dikemaskiniPada || '');
+  set('dibatalPada', t.dibatalPada || '');
+  set('pasangan', t.pasangan || '');
+  return row;
+}
+
+function appendTx_(d, list) {
+  const rows = list.map(t => txToRow_(t, d.c, null));
+  d.sh.getRange(d.sh.getLastRow() + 1, 1, rows.length, d.c._lebar).setValues(rows); // satu operasi tulis
+}
+
+function auditView_(t) {
+  if (!t) return null;
+  return { id: t.id, tarikh: t.tarikh, lokasi: t.lokasi, item: t.item, jenis: t.jenis, kuantiti: t.kuantiti, rujukan: t.rujukan, status: t.status };
+}
+
+function saveTransaction_(u, p) {
+  if (p.jenis === 'Pindahan Keluar' && p.lokasiPenerima) return saveTransfer_(u, p);
+  const t = validateTx_(p);
+  requireWrite_(u, t.lokasi);
+  const d = readTransactions_();
+  const kini = nowStr_();
+  Object.assign(t, { id: newId_('TRX'), status: 'AKTIF', direkodOleh: u.nama, emelPerekod: u.emel, diciptaPada: kini, pasangan: '' });
+  const aktif = d.senarai.map(x => x.t).filter(x => x.status === 'AKTIF');
+  const dipaksa = checkStock_(u, aktif, [], [t], p.paksa);
+  appendTx_(d, [t]);
+  writeAuditLog_(u, 'TAMBAH_TRANSAKSI', 'TRANSAKSI', t.id, null, auditView_(t), dipaksa.length ? 'DIPAKSA: ' + dipaksa.join('; ') : '');
+  return Object.assign(getTransactions_(u), { mesej: 'Transaksi ' + t.id + ' disimpan.' });
+}
+
+function saveTransfer_(u, p) {
+  const keluar = validateTx_(Object.assign({}, p, { jenis: 'Pindahan Keluar' }));
+  requireWrite_(u, keluar.lokasi);
+  const penerima = clean_(p.lokasiPenerima);
+  if (getSettings_().lokasi.map(l => l.nama).indexOf(penerima) < 0 || penerima === keluar.lokasi) {
+    throw new AppError_('INPUT', 'Lokasi penerima tidak sah.');
+  }
+  const d = readTransactions_();
+  const kini = nowStr_();
+  const asas = { status: 'AKTIF', direkodOleh: u.nama, emelPerekod: u.emel, diciptaPada: kini, siriKursus: '', jumlahPeserta: '' };
+  Object.assign(keluar, asas, { id: newId_('TRX') });
+  const masuk = Object.assign({}, keluar, { id: newId_('TRX'), lokasi: penerima, jenis: 'Pindahan Masuk', arah: 'Masuk' });
+  keluar.pasangan = masuk.id;
+  masuk.pasangan = keluar.id;
+  const aktif = d.senarai.map(x => x.t).filter(x => x.status === 'AKTIF');
+  const dipaksa = checkStock_(u, aktif, [], [keluar, masuk], p.paksa);
+  appendTx_(d, [keluar, masuk]);
+  writeAuditLog_(u, 'PINDAHAN_STOK', 'TRANSAKSI', keluar.id + ' > ' + masuk.id, null,
+    { keluar: auditView_(keluar), masuk: auditView_(masuk) }, dipaksa.length ? 'DIPAKSA: ' + dipaksa.join('; ') : '');
+  return Object.assign(getTransactions_(u), { mesej: 'Pindahan ' + keluar.item + ' (' + keluar.kuantiti + ') ke ' + penerima + ' direkod.' });
+}
+
+function findTx_(d, id) {
+  const x = d.senarai.find(s => s.t.id === clean_(id));
+  if (!x) throw new AppError_('TIADA', 'Rekod tidak dijumpai.');
+  return x;
+}
+/** Untuk rekod berpasangan, kebenaran ditentukan oleh lokasi penghantar (baris Keluar). */
+function pairOf_(d, x) {
+  if (!x.t.pasangan) return { utama: x, pasangan: null, lokasiKawalan: x.t.lokasi };
+  const p = d.senarai.find(s => s.t.id === x.t.pasangan) || null;
+  const keluar = x.t.arah === 'Keluar' ? x : (p || x);
+  return { utama: x, pasangan: p, lokasiKawalan: keluar.t.lokasi };
+}
+
+function updateTransaction_(u, p) {
+  const d = readTransactions_();
+  const x = findTx_(d, p.id);
+  if (x.t.status !== 'AKTIF') throw new AppError_('DILARANG', 'Rekod yang dibatalkan tidak boleh dikemaskini.');
+  const pr = pairOf_(d, x);
+  requireWrite_(u, pr.lokasiKawalan);
+
+  const input = Object.assign({}, p);
+  if (pr.pasangan || x.t.pasangan) { input.jenis = x.t.jenis; input.lokasi = x.t.lokasi; } // pindahan: jenis & lokasi tetap
+  else if (u.peranan !== 'ADMIN_UPK') input.lokasi = x.t.lokasi;                        // hanya Admin boleh pindah lokasi rekod
+  if (input.jenis === 'Pindahan Keluar' && !x.t.pasangan && x.t.jenis !== 'Pindahan Keluar') {
+    throw new AppError_('INPUT', 'Untuk pindahan antara lokasi, batalkan rekod ini dan rekod pindahan baharu.');
+  }
+  const v = validateTx_(input);
+  if (v.lokasi !== x.t.lokasi) requireWrite_(u, v.lokasi);
+
+  const kini = nowStr_();
+  const baru = Object.assign({}, x.t, v, { dikemaskiniOleh: u.nama, dikemaskiniPada: kini });
+  const kemaskini = [{ x: x, t: baru }];
+  if (pr.pasangan) {
+    const pb = Object.assign({}, pr.pasangan.t, {
+      tarikh: v.tarikh, item: v.item, kuantiti: v.kuantiti, rujukan: v.rujukan, catatan: v.catatan,
+      dikemaskiniOleh: u.nama, dikemaskiniPada: kini
+    });
+    kemaskini.push({ x: pr.pasangan, t: pb });
+  }
+  const aktif = d.senarai.map(s => s.t).filter(t => t.status === 'AKTIF');
+  const dipaksa = checkStock_(u, aktif, kemaskini.map(k => k.x.t.id), kemaskini.map(k => k.t), p.paksa);
+  kemaskini.forEach(k => d.sh.getRange(k.x.baris, 1, 1, d.c._lebar).setValues([txToRow_(k.t, d.c, k.x.raw)]));
+  writeAuditLog_(u, 'KEMASKINI_TRANSAKSI', 'TRANSAKSI', kemaskini.map(k => k.t.id).join(' > '),
+    auditView_(x.t), auditView_(baru), [clean_(p.sebab, 300), dipaksa.length ? 'DIPAKSA: ' + dipaksa.join('; ') : ''].filter(Boolean).join(' | '));
+  return Object.assign(getTransactions_(u), { mesej: 'Rekod ' + baru.id + ' dikemaskini.' });
+}
+
+function voidTransaction_(u, p) {
+  const sebab = clean_(p.sebab, 300);
+  if (sebab.length < 5) throw new AppError_('INPUT', 'Sila nyatakan sebab pembatalan (sekurang-kurangnya 5 aksara).');
+  const d = readTransactions_();
+  const x = findTx_(d, p.id);
+  if (x.t.status !== 'AKTIF') throw new AppError_('DILARANG', 'Rekod ini sudah dibatalkan.');
+  const pr = pairOf_(d, x);
+  requireWrite_(u, pr.lokasiKawalan);
+  const sasaran = [x].concat(pr.pasangan && pr.pasangan.t.status === 'AKTIF' ? [pr.pasangan] : []);
+  const aktif = d.senarai.map(s => s.t).filter(t => t.status === 'AKTIF');
+  const dipaksa = checkStock_(u, aktif, sasaran.map(s => s.t.id), [], p.paksa);
+  const kini = nowStr_();
+  sasaran.forEach(s => {
+    const t = Object.assign({}, s.t, { status: 'BATAL', dibatalOleh: u.nama, dibatalPada: kini, sebabBatal: sebab });
+    d.sh.getRange(s.baris, 1, 1, d.c._lebar).setValues([txToRow_(t, d.c, s.raw)]);
+  });
+  writeAuditLog_(u, 'BATAL_TRANSAKSI', 'TRANSAKSI', sasaran.map(s => s.t.id).join(' > '), auditView_(x.t), { status: 'BATAL' },
+    sebab + (dipaksa.length ? ' | DIPAKSA: ' + dipaksa.join('; ') : ''));
+  return Object.assign(getTransactions_(u), { mesej: sasaran.length > 1 ? 'Kedua-dua rekod pindahan dibatalkan.' : 'Rekod dibatalkan.' });
+}
+
+;
+/**
+ * Audit.gs — jejak audit. Hanya boleh DITAMBAH melalui writeAuditLog_().
+ * Tiada fungsi API untuk mengubah atau memadam log. Helaian AUDIT_LOG dilindungi (pemilik sahaja).
+ */
+
+function writeAuditLog_(u, tindakan, jenisRekod, idRekod, sebelum, selepas, sebab) {
+  const sh = sheet_(SH.AUDIT);
+  const json = o => (o == null ? '' : safe_(JSON.stringify(o)).slice(0, 45000));
+  sh.appendRow([
+    nowStr_(), safe_(u.emel || ''), safe_(u.nama || ''), u.peranan || '', safe_(u.lokasi || ''),
+    tindakan, jenisRekod || '', safe_(idRekod || ''), json(sebelum), json(selepas), safe_(sebab || '')
+  ]);
+}
+
+function getAuditLog_(u, p) {
+  if (!PERANAN[u.peranan].audit) throw new AppError_('DILARANG', 'Jejak audit terhad kepada Admin UPK.');
+  const sh = sheet_(SH.AUDIT);
+  const last = sh.getLastRow();
+  if (last < 2) return { log: [] };
+  const had = Math.min(Number(p && p.had) || 500, 2000);
+  const mula = Math.max(2, last - had + 1);
+  const rows = sh.getRange(mula, 1, last - mula + 1, HEADERS.AUDIT.length).getValues();
+  const log = rows.reverse().map(r => ({
+    masa: toDateTimeStr_(r[0]), emel: String(r[1]), nama: String(r[2]), peranan: String(r[3]), lokasi: String(r[4]),
+    tindakan: String(r[5]), jenisRekod: String(r[6]), idRekod: String(r[7]), sebelum: String(r[8]), selepas: String(r[9]), sebab: String(r[10])
+  }));
+  return { log: log };
+}
+
+;
+/**
+ * Drive.gs — arkib laporan PDF ke Google Drive dan rekod dalam ARKIB_LAPORAN.
+ */
+
+function uploadToDrive_(u, p) {
+  const lokasi = clean_(p.lokasi);
+  if (lokasi === 'SEMUA') {
+    if (!PERANAN[u.peranan].lihatSemua) throw new AppError_('DILARANG', 'Anda tiada akses kepada laporan keseluruhan.');
+  } else if (!canView_(u, lokasi)) {
+    throw new AppError_('DILARANG', 'Anda tiada akses kepada laporan ' + lokasi + '.');
+  }
+  const bulan = clean_(p.bulan);
+  if (!/^\d{4}-\d{2}$/.test(bulan)) throw new AppError_('INPUT', 'Bulan laporan tidak sah.');
+  const data = String(p.data || '');
+  if (data.length > 14 * 1024 * 1024) throw new AppError_('INPUT', 'Fail terlalu besar (maksimum 10MB).');
+  const bytes = Utilities.base64Decode(data);
+  // Semak tandatangan fail PDF ("%PDF")
+  if (bytes.length < 4 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46) {
+    throw new AppError_('INPUT', 'Fail bukan PDF yang sah.');
+  }
+  const namaLokasi = lokasi === 'SEMUA' ? 'KESELURUHAN' : lokasi;
+  const namaFail = (namaLokasi + ' - Laporan Stok ' + bulan + ' - ' + Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd-HHmm') + '.pdf')
+    .replace(/[\\/:*?"<>|]/g, '-');
+  const folderId = getSettings_().konfig.FOLDER_ARKIB_ID || APP.FOLDER_ARKIB_ASAL;
+  const fail = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, 'application/pdf', namaFail));
+  fail.setDescription('Dijana oleh ' + u.nama + ' (' + u.emel + ') melalui ' + APP.NAMA);
+  sheet_(SH.ARKIB).appendRow([nowStr_(), safe_(namaLokasi), bulan, safe_(namaFail), fail.getUrl(), fail.getId(), safe_(u.emel)]);
+  writeAuditLog_(u, 'ARKIB_LAPORAN', 'LAPORAN', fail.getId(), null, { namaFail: namaFail, lokasi: namaLokasi, bulan: bulan }, '');
+  return { url: fail.getUrl(), namaFail: namaFail };
+}
+
+    return { api: api, setupV3: setupV3, setupFirstAdmin: setupFirstAdmin };
+  })(SpreadsheetApp, PropertiesService, CacheService, LockService, Session, Utilities, DriveApp, HtmlService, { log: () => {}, error: (...a) => console_.error(...a) });
+
+  // ---------- Simpan / muat keadaan ----------
+  function simpan() {
+    simpanLS(KUNCI, JSON.stringify({ props, sheets: ss.sheets.map(s => ({ name: s.name, data: s.data.map(r => r.map(v => v instanceof Date ? { __d: v.getTime() } : v)) })) }));
+  }
+  function muat() {
+    const raw = bacaLS(KUNCI); if (!raw) return false;
+    try {
+      const o = JSON.parse(raw); props = o.props || {};
+      ss.sheets = o.sheets.map(x => { const s = new Sheet(x.name); s.data = x.data.map(r => r.map(v => v && typeof v === 'object' && '__d' in v ? new Date(v.__d) : v)); return s; });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ---------- Data contoh ----------
+  function seed() {
+    ss.sheets = []; props = {};
+    const tx = ss.insertSheet('TRANSAKSI');
+    const kini = new Date();
+    const t = (bulanLalu, hari) => { const d = new Date(kini.getFullYear(), kini.getMonth() - bulanLalu, hari); return d > kini ? new Date(kini.getFullYear(), kini.getMonth(), Math.max(1, kini.getDate() - 1)) : d; };
+    // Rekod "V2" lama (12 lajur, sebahagian tanpa ID)
+    tx.data = [['Tarikh', 'Lokasi', 'Item', 'Jenis', 'Arah', 'Kuantiti', 'Siri Kursus', 'Jumlah Peserta', 'Rujukan', 'ID', 'Direkod Oleh', 'Catatan'],
+      [t(3, 4), 'UPK BUUKI (HQ)', 'Sijil', 'Terima Pembekal', 'Masuk', 2500, '', '', 'DO-2026-101', '', 'Rekod V2', ''],
+      [t(3, 4), 'UPK BUUKI (HQ)', 'Buku Gerbang Perkahwinan', 'Terima Pembekal', 'Masuk', 2500, '', '', 'DO-2026-101', '', 'Rekod V2', ''],
+      [t(3, 4), 'UPK BUUKI (HQ)', 'Beg', 'Terima Pembekal', 'Masuk', 2500, '', '', 'DO-2026-102', '', 'Rekod V2', ''],
+      [t(3, 4), 'UPK BUUKI (HQ)', 'Pen', 'Terima Pembekal', 'Masuk', 3000, '', '', 'DO-2026-102', '', 'Rekod V2', ''],
+      [t(3, 4), 'UPK BUUKI (HQ)', 'Buku Nota', 'Terima Pembekal', 'Masuk', 2500, '', '', 'DO-2026-103', '', 'Rekod V2', ''],
+      [t(3, 6), 'UPK BUUKI (HQ)', 'Mineral', 'Terima Pembekal', 'Masuk', 60, '', '', 'DO-2026-104', '', 'Rekod V2', ''],
+      [t(3, 6), 'UPK BUUKI (HQ)', 'Gula-gula (Balang)', 'Terima Pembekal', 'Masuk', 30, '', '', 'DO-2026-104', '', 'Rekod V2', '']];
+    GAS.setupV3();
+    GAS.setupFirstAdmin();
+    const A = PENGGUNA_DEMO[0].emel, KU = PENGGUNA_DEMO[1].emel;
+    const panggil = (emel, action, payload) => { env.emel = emel; const r = JSON.parse(GAS.api(JSON.stringify({ action, payload }))); if (!r.ok) console_.warn('seed:', action, r.mesej); return r.data; };
+    const iso = d => fmtDate(d, '', 'yyyy-MM-dd');
+    panggil(A, 'pengguna_simpan', Object.assign({}, PENGGUNA_DEMO[0], { status: 'AKTIF' }));
+    PENGGUNA_DEMO.slice(1).forEach(u => panggil(A, 'pengguna_simpan', Object.assign({ baru: true }, u)));
+    const PAD = ['Daerah Seberang Perai Tengah', 'Daerah Seberang Perai Selatan', 'Daerah Barat Daya', 'Daerah SPU (Butterworth)', 'Daerah SPU (Kepala Batas)', 'Daerah Timur Laut'];
+    PAD.forEach((l, k) => ['Sijil', 'Buku Gerbang Perkahwinan', 'Beg', 'Pen', 'Buku Nota'].forEach(it =>
+      panggil(KU, 'pindahan', { tarikh: iso(t(2, 2 + k)), lokasi: 'UPK BUUKI (HQ)', lokasiPenerima: l, item: it, kuantiti: 260 + k * 10, rujukan: 'PDH/' + (k + 1) + '/2026' })));
+    PAD.forEach((l, k) => ['Sijil', 'Buku Gerbang Perkahwinan', 'Beg', 'Pen'].forEach(it =>
+      panggil(A, 'tambah', { tarikh: iso(t(1, 8 + k)), lokasi: l, item: it, jenis: 'Pengeluaran Kursus', kuantiti: 90 + k * 8, siriKursus: 'Siri ' + (10 + k) + '/2026', jumlahPeserta: 90 + k * 8 })));
+    PAD.forEach((l, k) => ['Sijil', 'Buku Gerbang Perkahwinan', 'Beg'].forEach(it =>
+      panggil(A, 'tambah', { tarikh: iso(t(0, 2 + k)), lokasi: l, item: it, jenis: 'Pengeluaran Kursus', kuantiti: 70 + k * 9, siriKursus: 'Siri ' + (20 + k) + '/2026', jumlahPeserta: 70 + k * 9 })));
+    panggil(KU, 'tambah', { tarikh: iso(t(0, 3)), lokasi: 'UPK BUUKI (HQ)', item: 'Mineral (Karton)', jenis: 'Pengeluaran Kursus', kuantiti: 54, siriKursus: 'Siri 19/2026', jumlahPeserta: 160 });
+    panggil(KU, 'tambah', { tarikh: iso(t(0, 3)), lokasi: 'UPK BUUKI (HQ)', item: 'Kertas A4 (Kotak)', jenis: 'Terima Pembekal', kuantiti: 2, rujukan: 'PO-2026-077' });
+    const d = panggil(PENGGUNA_DEMO[3].emel, 'tambah', { tarikh: iso(t(0, 1)), lokasi: 'Daerah Barat Daya', item: 'Beg', jenis: 'Pelarasan (-)', kuantiti: 6, catatan: 'Beg koyak semasa penghantaran' });
+    const salah = d && d.transaksi.find(x => x.catatan === 'Beg koyak semasa penghantaran');
+    if (salah) panggil(PENGGUNA_DEMO[3].emel, 'batal', { id: salah.id, sebab: 'Rekod berganda, telah direkod oleh rakan sekerja' });
+    simpan();
+  }
+
+  if (!muat()) seed();
+  env.emel = bacaSS('estok_demo_emel') || PENGGUNA_DEMO[0].emel;
+
+  // ---------- google.script.run tiruan ----------
+  function runner(ok, fail) {
+    return new Proxy({}, { get: (_, k) => {
+      if (k === 'withSuccessHandler') return f => runner(f, fail);
+      if (k === 'withFailureHandler') return f => runner(ok, f);
+      return (arg) => setTimeout(() => {
+        try { const r = GAS[k](arg); simpan(); ok && ok(r); } catch (e) { fail && fail(e); }
+      }, 250); // anggaran kelewatan rangkaian
+    } });
+  }
+  window.google = { script: { run: runner(null, null) } };
+
+  // ---------- Panel demo ----------
+  window.__estokDemo = { PENGGUNA_DEMO, TIDAK_BERDAFTAR,
+    tukar: (emel) => { simpanSS('estok_demo_emel', emel); location.reload(); },
+    reset: () => { try { localStorage.removeItem(KUNCI); } catch (e) {} location.reload(); },
+    semasa: () => env.emel };
+})();
+</script>
+<style>
+  #demo-panel { position: fixed; left: 12px; bottom: 12px; z-index: 200; font-family: Inter, system-ui, sans-serif; }
+  #demo-panel .pil { display: flex; align-items: center; gap: 8px; background: #0f172a; color: #fff; border-radius: 999px; padding: 8px 14px 8px 10px; font-size: 12px; font-weight: 600; box-shadow: 0 8px 24px rgba(15,23,42,.25); cursor: pointer; border: 0; }
+  #demo-panel .tag { background: #f59e0b; color: #111827; border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+  #demo-panel .kotak { position: absolute; left: 0; bottom: 48px; width: 300px; background: #fff; border-radius: 16px; box-shadow: 0 16px 40px rgba(15,23,42,.25); padding: 14px; border: 1px solid #e2e8f0; }
+  #demo-panel .kotak h4 { margin: 0 0 2px; font-size: 13px; color: #0f172a; }
+  #demo-panel .kotak p { margin: 0 0 10px; font-size: 11px; color: #64748b; line-height: 1.45; }
+  #demo-panel .u { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+  #demo-panel .u:hover { background: #f1f5f9; } #demo-panel .u.aktif { background: #eef3ff; box-shadow: inset 0 0 0 1px #c7d6ff; }
+  #demo-panel .u b { display: block; font-size: 12px; color: #0f172a; } #demo-panel .u span { font-size: 11px; color: #64748b; }
+  #demo-panel .reset { margin-top: 8px; width: 100%; border: 1px solid #fecaca; color: #b91c1c; background: #fff; border-radius: 10px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  @media print { #demo-panel { display: none; } }
+</style>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useEffect, useCallback } = React;
+    const {
+      Package, ArrowRightLeft, FileText, PlusCircle, MapPin, LayoutDashboard, Search, RefreshCw, Loader2, Ban,
+      AlertCircle, Download, ShieldCheck, History, AlertTriangle, TrendingUp, TrendingDown, Boxes, CheckCircle2,
+      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye, Menu, Bell, X, ChevronRight
+    } = LucideReact;
+
+    // ===================== SAMBUNGAN SERVER =====================
+    function api(action, payload = {}) {
+      return new Promise((resolve, reject) => {
+        if (!window.google || !google.script || !google.script.run) {
+          return reject(Object.assign(new Error('Sistem mesti dibuka melalui pautan Web App rasmi e-Stok.'), { kod: 'BUKAN_WEBAPP' }));
+        }
+        google.script.run
+          .withSuccessHandler(s => {
+            let r; try { r = JSON.parse(s); } catch (e) { return reject(new Error('Respons server tidak sah.')); }
+            r.ok ? resolve(r.data) : reject(Object.assign(new Error(r.mesej), { kod: r.kod }));
+          })
+          .withFailureHandler(e => reject(Object.assign(new Error((e && e.message) || 'Sambungan ke server gagal. Semak internet anda.'), { kod: 'RANGKAIAN' })))
+          .api(JSON.stringify({ action, payload }));
+      });
+    }
+
+    // ===================== UTILITI =====================
+    const JENIS_TRANSAKSI = ['Terima Pembekal', 'Pindahan Masuk', 'Pindahan Keluar', 'Pengeluaran Kursus', 'Pelarasan (+)', 'Pelarasan (-)', 'Cabutan Sijil'];
+    const JENIS_MASUK = ['Terima Pembekal', 'Pindahan Masuk', 'Pelarasan (+)'];
+    const BULAN = ['JANUARI', 'FEBRUARI', 'MAC', 'APRIL', 'MEI', 'JUN', 'JULAI', 'OGOS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DISEMBER'];
+    const hariIniLokal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const fmtTarikh = (iso) => { if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso || ''; const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+    const fmtMasa = (s) => s ? `${fmtTarikh(s.slice(0, 10))} ${s.slice(11, 16)}` : '';
+    const fmtBulan = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-'); return `${BULAN[parseInt(m, 10) - 1]} ${y}`; };
+    const fmtNo = (n) => Number(n || 0).toLocaleString('ms-MY');
+    const isMasuk = (t) => t.arah === 'Masuk';
+    const aktif = (t) => t.status === 'AKTIF';
+
+    function kiraRingkasan(senarai, items, { dari = null, hingga = null, abaiPindahanDalaman = false } = {}) {
+      const r = {};
+      items.forEach(i => { r[i.nama] = { awal: 0, masuk: 0, keluar: 0, akhir: 0 }; });
+      senarai.forEach(t => {
+        const x = r[t.item]; if (!x || !aktif(t)) return;
+        if (hingga && t.tarikh > hingga) return;
+        const q = Number(t.kuantiti) || 0, tanda = isMasuk(t) ? q : -q;
+        if (dari && t.tarikh < dari) { x.awal += tanda; x.akhir += tanda; return; }
+        x.akhir += tanda;
+        if (abaiPindahanDalaman && t.pasangan) return;
+        if (tanda > 0) x.masuk += q; else x.keluar += q;
+      });
+      return r;
+    }
+    const statusStok = (baki, min) => {
+      if (baki < 0) return { label: 'Negatif', cls: 'bg-red-100 text-red-800 ring-red-200' };
+      if (baki === 0 && !min) return { label: 'Tiada stok', cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
+      if (baki === 0) return { label: 'Habis', cls: 'bg-red-50 text-red-700 ring-red-200' };
+      if (min > 0 && baki <= min) return { label: 'Rendah', cls: 'bg-amber-50 text-amber-800 ring-amber-200' };
+      return { label: 'Mencukupi', cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200' };
+    };
+
+    // ===================== KOMPONEN ASAS =====================
+    const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 disabled:bg-slate-50 disabled:text-slate-500';
+    const Lencana = ({ children, cls }) => <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ring-1 ring-inset whitespace-nowrap ${cls}`}>{children}</span>;
+    const Kad = ({ title, children, actions, className = '' }) => (
+      <section className={`bg-white rounded-2xl shadow-sm ring-1 ring-slate-200/70 ${className}`}>
+        {(title || actions) && <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-3.5 border-b border-slate-100"><h2 className="text-[15px] font-semibold text-slate-800">{title}</h2><div className="flex items-center gap-2">{actions}</div></div>}
+        {children}
+      </section>
+    );
+    const Medan = ({ label, children, span = 2, nota }) => (
+      <div className={span === 2 ? 'col-span-2' : ''}><label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>{children}{nota && <p className="text-[11px] text-slate-500 mt-1">{nota}</p>}</div>
+    );
+    const Butang = ({ children, varian = 'utama', className = '', ...p }) => {
+      const v = { utama: 'bg-brand-700 hover:bg-brand-800 text-white', biru: 'bg-blue-600 hover:bg-blue-700 text-white', garis: 'ring-1 ring-slate-300 hover:bg-slate-50 text-slate-800', lembut: 'bg-slate-100 hover:bg-slate-200 text-slate-800', bahaya: 'bg-red-600 hover:bg-red-700 text-white' }[varian];
+      return <button {...p} className={`py-2 px-3.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60 ${v} ${className}`}>{children}</button>;
+    };
+
+    function Dialog({ tajuk, mesej, onYa, bahaya, input, labelYa, onTutup }) {
+      const [nilai, setNilai] = useState('');
+      const [proses, setProses] = useState(false);
+      const sah = !input || nilai.trim().length >= (input.min || 1);
+      const ya = async () => { setProses(true); try { await onYa(nilai.trim()); } finally { setProses(false); } };
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4 no-print" onClick={proses ? undefined : onTutup}>
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 mb-3"><AlertCircle className={`w-5 h-5 ${bahaya ? 'text-red-600' : onYa ? 'text-amber-500' : 'text-brand-600'}`} /><h3 className="text-base font-bold text-slate-900">{tajuk}</h3></div>
+            <p className="text-sm text-slate-600 mb-4 leading-relaxed whitespace-pre-line">{mesej}</p>
+            {input && <div className="mb-4"><label className="block text-xs font-semibold text-slate-600 mb-1">{input.label}</label><textarea rows="3" autoFocus className={`${inputCls} resize-none`} placeholder={input.placeholder} value={nilai} onChange={e => setNilai(e.target.value)} />{input.min && <p className="text-[11px] text-slate-500 mt-1">Sekurang-kurangnya {input.min} aksara.</p>}</div>}
+            <div className="flex justify-end gap-2">
+              <Butang varian="lembut" onClick={onTutup} disabled={proses}>{onYa ? 'Batal' : 'Tutup'}</Butang>
+              {onYa && <Butang varian={bahaya ? 'bahaya' : 'utama'} onClick={ya} disabled={!sah || proses}>{proses && <Loader2 className="w-4 h-4 animate-spin" />}{labelYa || 'Ya, teruskan'}</Butang>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== APP =====================
+    function App() {
+      const [boot, setBoot] = useState(null);
+      const [ralatBoot, setRalatBoot] = useState(null);
+      const [transaksi, setTransaksi] = useState([]);
+      const [dibacaPada, setDibacaPada] = useState('');
+      const [memuat, setMemuat] = useState(false);
+      const [tab, setTab] = useState('dashboard');
+      const [lokasiPilihan, setLokasiPilihan] = useState('SEMUA');
+      const [dialog, setDialog] = useState(null);
+      const [toast, setToast] = useState(null);
+      const [menuBuka, setMenuBuka] = useState(false);
+      const [cariGlobal, setCariGlobal] = useState('');
+      const [cariHantar, setCariHantar] = useState({ q: '', n: 0 });
+
+      const paparToast = (mesej, jenis = 'ok') => { setToast({ mesej, jenis }); setTimeout(() => setToast(null), 4000); };
+      const paparMesej = (mesej, tajuk = 'Makluman') => setDialog({ tajuk, mesej });
+      const terimaData = (d) => { if (d && d.transaksi) { setTransaksi(d.transaksi.slice().sort((a, b) => (b.tarikh + b.diciptaPada).localeCompare(a.tarikh + a.diciptaPada))); setDibacaPada(d.dibacaPada); } if (d && d.mesej) paparToast(d.mesej); };
+
+      const muatData = useCallback(async () => {
+        setMemuat(true);
+        try { terimaData(await api('transaksi')); }
+        catch (e) { paparMesej(e.message, 'Gagal memuat data'); }
+        finally { setMemuat(false); }
+      }, []);
+
+      useEffect(() => {
+        api('bootstrap').then(b => {
+          setBoot(b);
+          setLokasiPilihan(b.kebenaran.lihatSemua ? 'SEMUA' : b.pengguna.lokasi);
+          muatData();
+        }).catch(e => setRalatBoot(e));
+      }, []);
+
+      const dataLokasi = useMemo(() => lokasiPilihan === 'SEMUA' ? transaksi : transaksi.filter(t => t.lokasi === lokasiPilihan), [transaksi, lokasiPilihan]);
+      const amaran = useMemo(() => boot ? kiraAmaran(transaksi, boot.tetapan.items, lokasiPilihan === 'SEMUA' ? boot.kebenaran.lokasiDilihat : [lokasiPilihan]) : [], [transaksi, boot, lokasiPilihan]);
+
+      if (ralatBoot) return <SkrinTiadaAkses ralat={ralatBoot} />;
+      if (!boot) return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm gap-2 bg-[#eef2f8]"><Loader2 className="w-5 h-5 animate-spin" /> Mengesahkan akaun…</div>;
+
+      const { pengguna, kebenaran, tetapan } = boot;
+      const menu = [
+        { id: 'dashboard', label: 'Papan Pemuka', Icon: LayoutDashboard },
+        { id: 'transaksi', label: 'Transaksi', Icon: ArrowRightLeft },
+        { id: 'laporan', label: 'Laporan Bulanan', Icon: FileText },
+        ...(kebenaran.urusPengguna ? [{ id: 'pengguna', label: 'Pengguna', Icon: Users }] : []),
+        ...(kebenaran.audit ? [{ id: 'audit', label: 'Jejak Audit', Icon: History }] : [])
+      ];
+      const pilihTab = (id) => { setTab(id); setMenuBuka(false); window.scrollTo(0, 0); };
+      const hantarCari = (e) => { e.preventDefault(); setCariHantar(c => ({ q: cariGlobal, n: c.n + 1 })); pilihTab('transaksi'); };
+      const hariIni = boot.hariIni || hariIniLokal();
+      const k = { pengguna, kebenaran, tetapan, hariIni, transaksi, dataLokasi, lokasiPilihan, amaran, muatData, terimaData, paparMesej, paparToast, setDialog, pilihTab, cariHantar };
+      const panggilan = pengguna.nama.replace(/^(En\.|Encik|Puan|Pn\.|Cik|Ustaz|Ustazah|Dr\.|Tuan)\s+/i, '').split(/\s+(bin|binti|bt|b\.)\s+/i)[0];
+      const inisial = panggilan.split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase();
+      const tajukTab = menu.find(m => m.id === tab)?.label;
+
+      const Sidebar = () => (
+        <div className="flex flex-col h-full">
+          <div className="px-5 pt-6 pb-5 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/15 ring-1 ring-white/25 flex items-center justify-center"><Package className="w-5 h-5 text-white" /></div>
+            <div className="leading-tight"><div className="text-base font-bold text-white">e-Stok JHEAIPP</div><div className="text-[11px] text-blue-100/80">Inventori Bersepadu UPK & PAD</div></div>
+          </div>
+          <div className="px-5 pb-2 text-[10px] font-semibold uppercase tracking-widest text-blue-100/60">Menu</div>
+          <nav className="px-3 space-y-1 flex-1">
+            {menu.map(({ id, label, Icon }) => (
+              <button key={id} onClick={() => pilihTab(id)} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${tab === id ? 'bg-white text-brand-700 shadow-sm' : 'text-blue-50 hover:bg-white/10'}`}>
+                <Icon className="w-[18px] h-[18px]" />{label}
+                {id === 'dashboard' && amaran.length > 0 && <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === id ? 'bg-red-50 text-red-600' : 'bg-red-500 text-white'}`}>{amaran.length}</span>}
+              </button>
+            ))}
+          </nav>
+          <div className="m-3 p-3 rounded-xl bg-white/10 ring-1 ring-white/15 text-[11px] text-blue-50">
+            <div className="flex items-center gap-1.5 font-semibold text-white">{pengguna.peranan === 'ADMIN_UPK' && <ShieldCheck className="w-3.5 h-3.5" />}{pengguna.labelPeranan}</div>
+            <div className="mt-0.5 text-blue-100/80 truncate">{pengguna.lokasi}</div>
+            <div className="mt-2 text-blue-100/60">Versi {boot.versi}</div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen bg-[#eef2f8] text-slate-800">
+          <aside className="no-print hidden lg:block fixed inset-y-0 left-0 w-64 bg-gradient-to-b from-[#1f5fb0] to-[#173f7c] z-40"><Sidebar /></aside>
+          {menuBuka && (
+            <div className="no-print lg:hidden fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMenuBuka(false)} />
+              <aside className="absolute inset-y-0 left-0 w-72 bg-gradient-to-b from-[#1f5fb0] to-[#173f7c] shadow-xl"><button onClick={() => setMenuBuka(false)} className="absolute top-4 right-3 p-1.5 text-white/80"><X className="w-5 h-5" /></button><Sidebar /></aside>
+            </div>
+          )}
+
+          <div className="lg:ml-64">
+            <header className="no-print sticky top-0 z-30 px-3 md:px-5 pt-3 md:pt-4 pb-2 bg-[#eef2f8]">
+              <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200/70 px-3 md:px-3 md:px-4 py-2.5 flex items-center gap-2 md:gap-3">
+                <button onClick={() => setMenuBuka(true)} className="lg:hidden p-2 -ml-1 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Menu"><Menu className="w-5 h-5" /></button>
+                <form onSubmit={hantarCari} className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input value={cariGlobal} onChange={e => setCariGlobal(e.target.value)} placeholder="Cari transaksi, ID, rujukan…" className="w-full rounded-full bg-slate-50 ring-1 ring-slate-200 pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600/40" />
+                </form>
+                <div className="hidden md:flex items-center rounded-full bg-slate-50 ring-1 ring-slate-200 pl-3 pr-1.5 py-1">
+                  <MapPin className="h-4 w-4 mr-1.5 text-brand-600 flex-shrink-0" />
+                  <select className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none max-w-[220px] py-1 disabled:opacity-100" value={lokasiPilihan} onChange={e => setLokasiPilihan(e.target.value)} disabled={!kebenaran.lihatSemua}>
+                    {kebenaran.lihatSemua && <option value="SEMUA">Semua Lokasi</option>}
+                    {kebenaran.lokasiDilihat.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+                <button onClick={muatData} disabled={memuat} title={dibacaPada ? `Data setakat ${dibacaPada.slice(11, 16)}` : 'Segar semula'} className="p-2 rounded-full text-slate-500 hover:bg-slate-100"><RefreshCw className={`w-[18px] h-[18px] ${memuat ? 'animate-spin text-brand-600' : ''}`} /></button>
+                <button onClick={() => pilihTab('dashboard')} title={`${amaran.length} amaran stok`} className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100"><Bell className="w-[18px] h-[18px]" />{amaran.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
+                <div className="flex items-center gap-2.5 pl-1 md:pl-2 md:border-l md:border-slate-200">
+                  <div className="w-9 h-9 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{inisial}</div>
+                  <div className="hidden sm:block leading-tight min-w-0"><div className="text-sm font-semibold text-slate-800 truncate max-w-[190px]">Hai, {panggilan}</div><div className="text-[11px] text-slate-500">{fmtTarikh(hariIni)}</div></div>
+                </div>
+              </div>
+              {kebenaran.lihatSemua && (
+                <div className="md:hidden mt-2 flex items-center rounded-xl bg-white ring-1 ring-slate-200 px-3 py-1.5">
+                  <MapPin className="h-4 w-4 mr-1.5 text-brand-600" />
+                  <select className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none w-full py-0.5" value={lokasiPilihan} onChange={e => setLokasiPilihan(e.target.value)}>
+                    <option value="SEMUA">Semua Lokasi</option>{kebenaran.lokasiDilihat.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+              )}
+            </header>
+
+            <main className="px-3 md:px-5 pb-10 pt-2">
+              {tab !== 'dashboard' && <h1 className="no-print text-lg font-bold text-slate-900 mb-3 px-1">{tajukTab}</h1>}
+              {tab === 'dashboard' && <PapanPemuka {...k} />}
+              {tab === 'transaksi' && <Transaksi {...k} />}
+              {tab === 'laporan' && <Laporan {...k} />}
+              {tab === 'pengguna' && kebenaran.urusPengguna && <Pengguna {...k} />}
+              {tab === 'audit' && kebenaran.audit && <JejakAudit {...k} />}
+              <p className="text-center text-[11px] text-slate-400 mt-8 no-print">e-Stok JHEAIPP V{boot.versi} · {pengguna.emel} · Akses direkod untuk tujuan audit</p>
+            </main>
+          </div>
+
+          {dialog && <Dialog {...dialog} onTutup={() => setDialog(null)} />}
+          {toast && <div className={`fixed bottom-5 right-5 left-5 sm:left-auto z-[110] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium no-print ${toast.jenis === 'ok' ? 'bg-slate-900 text-white' : 'bg-red-600 text-white'}`}>{toast.jenis === 'ok' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}{toast.mesej}</div>}
+        </div>
+      );
+    }
+
+    function SkrinTiadaAkses({ ralat }) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6 bg-[#eef2f8]">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-8 text-center">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mb-4"><Lock className="w-7 h-7 text-brand-600" /></div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-brand-600 mb-1">e-Stok JHEAIPP</div>
+            <h1 className="text-lg font-bold text-slate-900 mb-2">Akses tidak dibenarkan</h1>
+            <p className="text-sm text-slate-600 leading-relaxed">{ralat.message}</p>
+            <p className="text-[11px] text-slate-400 mt-6">Kod: {ralat.kod || 'RALAT'}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== CARTA =====================
+    const WARNA = { masuk: '#1f4fd1', keluar: '#5b8def' };
+    const WARNA_KATEGORI = ['#1f4fd1', '#12a07a', '#f07b22', '#8b5cf6', '#e0457b'];
+    const WARNA_LAIN = '#cbd5e1';
+    const BULAN_PENDEK = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'];
+    const niceMax = (v) => { if (v <= 0) return 10; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+    const fmtRingkas = (n) => n >= 1000 ? (n / 1000).toLocaleString('ms-MY', { maximumFractionDigits: 1 }) + 'k' : String(n);
+    const barAtasBulat = (x, y, w, h, r = 4) => { if (h <= 0) return ''; const rr = Math.min(r, h, w / 2); return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`; };
+
+    function CartaBar({ data }) {
+      const [hover, setHover] = useState(null);
+      const [jadual, setJadual] = useState(false);
+      const ref = React.useRef(null);
+      const [lebar, setLebar] = useState(640);
+      useEffect(() => {
+        if (!ref.current || !window.ResizeObserver) return;
+        const ro = new ResizeObserver(([e]) => setLebar(Math.max(280, Math.round(e.contentRect.width))));
+        ro.observe(ref.current); return () => ro.disconnect();
+      }, [jadual]);
+      const W = lebar, H = Math.max(200, Math.min(280, Math.round(lebar * 0.42))), pl = 44, pr = 8, pt = 12, pb = 28;
+      const max = niceMax(Math.max(...data.map(d => Math.max(d.masuk, d.keluar)), 0));
+      const iw = W - pl - pr, ih = H - pt - pb, gw = iw / data.length, bw = Math.min(26, gw * 0.3);
+      const y = v => pt + ih - (v / max) * ih;
+      return (
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: WARNA.masuk }} />Masuk</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: WARNA.keluar }} />Keluar</span>
+            </div>
+            <button onClick={() => setJadual(j => !j)} className="text-[11px] font-medium text-slate-500 hover:text-brand-700 px-2 py-1 rounded-md ring-1 ring-slate-200">{jadual ? 'Papar carta' : 'Papar jadual'}</button>
+          </div>
+          {jadual ? (
+            <table className="w-full text-sm"><thead className="text-xs text-slate-500"><tr><th className="text-left py-1.5">Bulan</th><th className="text-right">Masuk</th><th className="text-right">Keluar</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{data.map(d => <tr key={d.kunci}><td className="py-1.5">{d.label}</td><td className="text-right tabular">{fmtNo(d.masuk)}</td><td className="text-right tabular">{fmtNo(d.keluar)}</td></tr>)}</tbody></table>
+          ) : (
+            <div className="relative" ref={ref}>
+              <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} className="block" role="img" aria-label="Carta stok masuk dan keluar mengikut bulan">
+                {[0, 0.25, 0.5, 0.75, 1].map(f => (
+                  <g key={f}><line x1={pl} x2={W - pr} y1={y(max * f)} y2={y(max * f)} stroke="#e2e8f0" strokeDasharray={f === 0 ? '' : '3 4'} /><text x={pl - 8} y={y(max * f) + 4} textAnchor="end" fontSize="11" fill="#94a3b8">{fmtRingkas(max * f)}</text></g>
+                ))}
+                {data.map((d, i) => {
+                  const cx = pl + gw * i + gw / 2;
+                  return (
+                    <g key={d.kunci} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                      <rect x={pl + gw * i} y={pt} width={gw} height={ih} fill={hover === i ? '#f1f5f9' : 'transparent'} rx="6" />
+                      <path d={barAtasBulat(cx - bw - 1, y(d.masuk), bw, pt + ih - y(d.masuk))} fill={WARNA.masuk} />
+                      <path d={barAtasBulat(cx + 1, y(d.keluar), bw, pt + ih - y(d.keluar))} fill={WARNA.keluar} />
+                      <text x={cx} y={H - 8} textAnchor="middle" fontSize="11" fill={hover === i ? '#1e293b' : '#64748b'} fontWeight={hover === i ? 600 : 400}>{d.label}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+              {hover !== null && (
+                <div className="absolute pointer-events-none bg-slate-900 text-white rounded-lg px-3 py-2 text-xs shadow-lg" style={{ left: `${((pl + gw * hover + gw / 2) / W) * 100}%`, top: 0, transform: `translateX(${hover > data.length / 2 ? '-105%' : '5%'})` }}>
+                  <div className="font-semibold mb-1">{data[hover].labelPenuh}</div>
+                  <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: WARNA.masuk }} />Masuk <b className="ml-auto pl-3 tabular">{fmtNo(data[hover].masuk)}</b></div>
+                  <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: WARNA.keluar }} />Keluar <b className="ml-auto pl-3 tabular">{fmtNo(data[hover].keluar)}</b></div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function CartaDonut({ data, jumlah, labelTengah }) {
+      const [hover, setHover] = useState(null);
+      const R = 70, r = 46, C = 90;
+      let sudut = -Math.PI / 2;
+      const arka = data.map(d => {
+        const a = (d.nilai / jumlah) * Math.PI * 2, s = sudut, e = sudut + a; sudut = e;
+        const p = (rad, ang) => [C + rad * Math.cos(ang), C + rad * Math.sin(ang)];
+        const besar = a > Math.PI ? 1 : 0;
+        const [x1, y1] = p(R, s), [x2, y2] = p(R, e), [x3, y3] = p(r, e), [x4, y4] = p(r, s);
+        const path = data.length === 1 ? null : `M${x1},${y1}A${R},${R} 0 ${besar} 1 ${x2},${y2}L${x3},${y3}A${r},${r} 0 ${besar} 0 ${x4},${y4}Z`;
+        return { ...d, path };
+      });
+      const aktifD = hover !== null ? data[hover] : null;
+      return (
+        <div className="flex flex-col sm:flex-row lg:flex-col items-center gap-4">
+          <svg viewBox="0 0 180 180" className="w-40 h-40 flex-shrink-0" role="img" aria-label="Carta pecahan pengeluaran mengikut item">
+            {arka.map((d, i) => d.path
+              ? <path key={d.nama} d={d.path} fill={d.warna} stroke="#fff" strokeWidth="2" opacity={hover === null || hover === i ? 1 : 0.35} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
+              : <circle key={d.nama} cx={C} cy={C} r={(R + r) / 2} fill="none" stroke={d.warna} strokeWidth={R - r} />)}
+            <text x={C} y={C - 2} textAnchor="middle" fontSize="20" fontWeight="700" fill="#0f172a">{fmtNo(aktifD ? aktifD.nilai : jumlah)}</text>
+            <text x={C} y={C + 15} textAnchor="middle" fontSize="10" fill="#64748b">{aktifD ? `${Math.round(aktifD.nilai / jumlah * 100)}%` : labelTengah}</text>
+          </svg>
+          <ul className="w-full space-y-1.5 text-xs">
+            {data.map((d, i) => (
+              <li key={d.nama} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} className={`flex items-center gap-2 rounded-md px-1.5 py-1 ${hover === i ? 'bg-slate-50' : ''}`}>
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: d.warna }} />
+                <span className="text-slate-700 truncate">{d.nama}</span>
+                <span className="ml-auto tabular font-semibold text-slate-800">{fmtNo(d.nilai)}</span>
+                <span className="tabular text-slate-400 w-9 text-right">{Math.round(d.nilai / jumlah * 100)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    function kiraAmaran(transaksi, items, lokasiSenarai) {
+      const out = [];
+      lokasiSenarai.forEach(l => {
+        const r = kiraRingkasan(transaksi.filter(t => t.lokasi === l), items);
+        items.forEach(i => { const b = r[i.nama].akhir; if (b < 0 || (i.stokMin > 0 && b <= i.stokMin)) out.push({ lokasi: l, item: i.nama, baki: b, min: i.stokMin }); });
+      });
+      return out.sort((a, b) => (a.baki - a.min) - (b.baki - b.min));
+    }
+
+    // ===================== PAPAN PEMUKA =====================
+    function KadKPI({ label, nilai, sub, Icon, warna, onClick }) {
+      return (
+        <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200/70 p-4 md:p-5">
+          <div className="flex items-start justify-between">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm" style={{ background: warna }}><Icon className="w-5 h-5" /></div>
+            {onClick && <button onClick={onClick} className="w-8 h-8 rounded-full bg-brand-600 hover:bg-brand-700 text-white flex items-center justify-center" aria-label={`Buka ${label}`}><ChevronRight className="w-4 h-4" /></button>}
+          </div>
+          <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+          <div className="text-2xl md:text-[28px] font-bold text-slate-900 tabular leading-tight mt-0.5">{nilai}</div>
+          {sub && <div className="text-[11px] text-slate-500 mt-1">{sub}</div>}
+        </div>
+      );
+    }
+
+    function PapanPemuka({ tetapan, dataLokasi, transaksi, lokasiPilihan, kebenaran, hariIni, amaran, pilihTab }) {
+      const items = tetapan.items;
+      const semua = lokasiPilihan === 'SEMUA';
+      const bulanSemasa = hariIni.slice(0, 7);
+      const [semuaAmaran, setSemuaAmaran] = useState(false);
+      const baki = useMemo(() => kiraRingkasan(dataLokasi, items, { abaiPindahanDalaman: semua }), [dataLokasi, items, semua]);
+      const jumlahBaki = Object.values(baki).reduce((s, x) => s + Math.max(0, x.akhir), 0);
+
+      // 6 bulan terakhir
+      const siriBulan = useMemo(() => {
+        const [y0, m0] = bulanSemasa.split('-').map(Number);
+        const out = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(y0, m0 - 1 - i, 1);
+          const kunci = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          out.push({ kunci, label: BULAN_PENDEK[d.getMonth()], labelPenuh: fmtBulan(kunci).replace(/^(\w)(\w*)/, (_, a, b) => a + b.toLowerCase()), masuk: 0, keluar: 0 });
+        }
+        dataLokasi.forEach(t => {
+          if (!aktif(t) || (semua && t.pasangan)) return;
+          const b = out.find(x => x.kunci === t.tarikh.slice(0, 7)); if (!b) return;
+          if (isMasuk(t)) b.masuk += t.kuantiti; else b.keluar += t.kuantiti;
+        });
+        return out;
+      }, [dataLokasi, bulanSemasa, semua]);
+      const bulanIniData = siriBulan[siriBulan.length - 1];
+      const txBulan = dataLokasi.filter(t => aktif(t) && t.tarikh.startsWith(bulanSemasa));
+
+      const donut = useMemo(() => {
+        const ikut = {};
+        txBulan.filter(t => !isMasuk(t) && !(semua && t.pasangan)).forEach(t => { ikut[t.item] = (ikut[t.item] || 0) + t.kuantiti; });
+        const susun = Object.entries(ikut).sort((a, b) => b[1] - a[1]);
+        const atas = susun.slice(0, 5).map(([nama, nilai], i) => ({ nama, nilai, warna: WARNA_KATEGORI[i] }));
+        const lain = susun.slice(5).reduce((s, x) => s + x[1], 0);
+        if (lain > 0) atas.push({ nama: 'Lain-lain', nilai: lain, warna: WARNA_LAIN });
+        return { data: atas, jumlah: susun.reduce((s, x) => s + x[1], 0) };
+      }, [txBulan, semua]);
+
+      const lokasiDisemak = semua ? kebenaran.lokasiDilihat : [lokasiPilihan];
+      const matriks = useMemo(() => { const m = {}; lokasiDisemak.forEach(l => { m[l] = kiraRingkasan(transaksi.filter(t => t.lokasi === l), items); }); return m; }, [transaksi, items, lokasiPilihan]);
+      const terkini = dataLokasi.filter(aktif).slice(0, 6);
+      const habis = amaran.filter(a => a.baki <= 0).length;
+      const namaBulan = bulanIniData.labelPenuh;
+      const th = 'text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-3 md:px-4 py-2.5';
+
+      return (
+        <div className="space-y-4 md:space-y-5">
+          <div className="px-1 flex flex-wrap items-end justify-between gap-2">
+            <div><h1 className="text-xl font-bold text-slate-900">Papan Pemuka</h1><p className="text-sm text-slate-500">{semua ? 'Keseluruhan negeri' : lokasiPilihan} · {namaBulan}</p></div>
+          </div>
+
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
+            <KadKPI label="Jumlah baki stok" nilai={fmtNo(jumlahBaki)} sub={`${items.length} jenis item`} Icon={Boxes} warna="#12a07a" onClick={() => document.getElementById('baki-stok')?.scrollIntoView({ behavior: 'smooth' })} />
+            <KadKPI label="Keluar bulan ini" nilai={fmtNo(bulanIniData.keluar)} sub={`Masuk ${fmtNo(bulanIniData.masuk)} unit`} Icon={TrendingDown} warna="#f07b22" onClick={() => pilihTab('laporan')} />
+            <KadKPI label="Stok rendah / habis" nilai={fmtNo(amaran.length)} sub={habis ? `${habis} habis atau negatif` : 'Tiada item habis'} Icon={AlertTriangle} warna="#e5484d" onClick={() => document.getElementById('amaran-stok')?.scrollIntoView({ behavior: 'smooth' })} />
+            <KadKPI label="Transaksi bulan ini" nilai={fmtNo(txBulan.length)} sub={`${fmtNo(dataLokasi.filter(aktif).length)} rekod aktif`} Icon={ArrowRightLeft} warna="#1f4fd1" onClick={() => pilihTab('transaksi')} />
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-4 md:gap-5 [&>*]:min-w-0">
+            <Kad className="lg:col-span-2" title="Stok Masuk & Keluar" actions={<span className="text-[11px] text-slate-500 bg-slate-50 ring-1 ring-slate-200 rounded-md px-2 py-1">6 bulan</span>}>
+              <div className="px-4 md:px-5 pb-4 pt-3"><CartaBar data={siriBulan} /></div>
+            </Kad>
+            <Kad title="Pengeluaran Ikut Item" actions={<span className="text-[11px] text-slate-500">{namaBulan}</span>}>
+              <div className="p-4 md:p-5">{donut.jumlah > 0 ? <CartaDonut data={donut.data} jumlah={donut.jumlah} labelTengah="unit keluar" /> : <div className="py-10 text-center text-sm text-slate-500">Tiada pengeluaran direkod bulan ini.</div>}</div>
+            </Kad>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-4 md:gap-5 [&>*]:min-w-0">
+            <div id="amaran-stok">
+            <Kad title={<span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-500" />Amaran Stok Rendah</span>} actions={amaran.length > 5 && <button onClick={() => setSemuaAmaran(s => !s)} className="text-xs font-semibold text-brand-600 hover:underline">{semuaAmaran ? 'Ringkaskan' : `Lihat semua (${amaran.length})`}</button>}>
+              {amaran.length === 0 ? <div className="p-8 text-center text-sm text-slate-500"><CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />Semua item melebihi paras minimum.</div> : (
+                <div className="overflow-x-auto"><table className="w-full text-sm">
+                  <thead className="bg-slate-50/80"><tr><th className={th}>Item</th><th className={`${th} hidden sm:table-cell`}>Lokasi</th><th className={`${th} text-right`}>Min</th><th className={`${th} text-right`}>Baki</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{amaran.slice(0, semuaAmaran ? 999 : 5).map((a, i) => { const st = statusStok(a.baki, a.min); return (
+                    <tr key={i}><td className="px-3 md:px-4 py-2.5"><div className="font-medium text-slate-800">{a.item}</div><div className="text-[11px] text-slate-500 sm:hidden">{a.lokasi}</div></td><td className="px-3 md:px-4 py-2.5 text-xs text-slate-600 hidden sm:table-cell">{a.lokasi}</td><td className="px-3 md:px-4 py-2.5 text-right tabular text-slate-500">{fmtNo(a.min)}</td><td className="px-3 md:px-4 py-2.5 text-right"><div className={`tabular font-bold ${a.baki <= 0 ? 'text-red-600' : 'text-amber-700'}`}>{fmtNo(a.baki)}</div><Lencana cls={st.cls}>{st.label}</Lencana></td></tr>
+                  ); })}</tbody>
+                </table></div>
+              )}
+            </Kad>
+            </div>
+            <Kad title="Transaksi Terkini" actions={<button onClick={() => pilihTab('transaksi')} className="text-xs font-semibold text-brand-600 hover:underline">Lihat semua</button>}>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="bg-slate-50/80"><tr><th className={th}>Tarikh</th><th className={th}>Item</th><th className={`${th} hidden sm:table-cell`}>Jenis</th><th className={`${th} text-right`}>Kuantiti</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{terkini.map(t => (
+                  <tr key={t.id}><td className="px-3 md:px-4 py-2.5 tabular text-xs text-slate-600 whitespace-nowrap">{fmtTarikh(t.tarikh)}</td><td className="px-3 md:px-4 py-2.5"><div className="font-medium text-slate-800">{t.item}</div><div className="text-[11px] text-slate-500 truncate max-w-[180px]">{semua ? t.lokasi : (t.direkodOleh || '—')}</div></td><td className="px-3 md:px-4 py-2.5 text-xs text-slate-600 hidden sm:table-cell">{t.jenis}</td><td className={`px-3 md:px-4 py-2.5 text-right tabular font-bold ${isMasuk(t) ? 'text-emerald-700' : 'text-slate-800'}`}>{isMasuk(t) ? '+' : '−'}{fmtNo(t.kuantiti)}</td></tr>
+                ))}{terkini.length === 0 && <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-500">Belum ada transaksi.</td></tr>}</tbody>
+              </table></div>
+            </Kad>
+          </div>
+
+          <div id="baki-stok">
+          <Kad title={semua ? 'Baki Stok Mengikut Lokasi' : 'Baki Stok Semasa'}>
+            <div className="overflow-x-auto"><table className={`w-full text-sm ${semua ? 'min-w-[960px]' : ''}`}>
+              <thead className="bg-slate-50/80"><tr>
+                <th className={`${th} sticky left-0 bg-slate-50`}>Item</th>
+                {semua ? lokasiDisemak.map(l => <th key={l} className={`${th} text-right normal-case`}>{l.replace('Daerah ', '').replace(' (HQ)', '')}</th>) : (<><th className={`${th} text-right hidden sm:table-cell`}>Masuk</th><th className={`${th} text-right hidden sm:table-cell`}>Keluar</th></>)}
+                <th className={`${th} text-right`}>{semua ? 'Jumlah' : 'Baki'}</th>{!semua && <th className={th}>Status</th>}
+              </tr></thead>
+              <tbody className="divide-y divide-slate-100">{items.map(i => { const b = baki[i.nama]; const st = statusStok(b.akhir, i.stokMin); return (
+                <tr key={i.nama} className="hover:bg-slate-50/60">
+                  <td className="px-3 md:px-4 py-2.5 font-medium text-slate-800 sticky left-0 bg-white">{i.nama}</td>
+                  {semua ? lokasiDisemak.map(l => { const v = matriks[l][i.nama].akhir; return <td key={l} className={`px-3 md:px-4 py-2.5 text-right tabular ${v < 0 ? 'text-red-600 font-bold' : (i.stokMin > 0 && v <= i.stokMin ? 'text-amber-700 font-semibold' : 'text-slate-700')}`}>{fmtNo(v)}</td>; })
+                    : (<><td className="px-3 md:px-4 py-2.5 text-right tabular text-slate-600 hidden sm:table-cell">{fmtNo(b.masuk)}</td><td className="px-3 md:px-4 py-2.5 text-right tabular text-slate-600 hidden sm:table-cell">{fmtNo(b.keluar)}</td></>)}
+                  <td className={`px-3 md:px-4 py-2.5 text-right tabular font-bold ${b.akhir < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtNo(b.akhir)}</td>
+                  {!semua && <td className="px-3 md:px-4 py-2.5"><Lencana cls={st.cls}>{st.label}</Lencana></td>}
+                </tr>
+              ); })}</tbody>
+            </table></div>
+            {semua && <p className="px-3 md:px-4 py-2.5 text-[11px] text-slate-500 border-t border-slate-100">Angka oren = pada atau bawah paras minimum, merah = habis/negatif. Pindahan antara lokasi tidak dikira sebagai masuk/keluar di peringkat negeri.</p>}
+          </Kad>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== TRANSAKSI =====================
+    function Transaksi({ pengguna, kebenaran, tetapan, hariIni, transaksi, dataLokasi, lokasiPilihan, terimaData, paparMesej, setDialog, cariHantar }) {
+      const items = tetapan.items.map(i => i.nama);
+      const lokasiTulis = kebenaran.lokasiDitulis;
+      const bolehTulis = lokasiTulis.length > 0;
+      const isAdmin = pengguna.peranan === 'ADMIN_UPK';
+      const lokasiLalai = () => lokasiTulis.includes(lokasiPilihan) ? lokasiPilihan : lokasiTulis[0];
+      const kosong = () => ({ tarikh: hariIni, lokasi: lokasiLalai(), jenis: JENIS_TRANSAKSI[0], item: items[0] || '', kuantiti: '', siriKursus: '', jumlahPeserta: '', rujukan: '', catatan: '', lokasiPenerima: '', sebab: '' });
+      const [borang, setBorang] = useState(kosong);
+      const [editId, setEditId] = useState(null);
+      const [simpan, setSimpan] = useState(false);
+      const [cari, setCari] = useState(cariHantar ? cariHantar.q : ''); const [tItem, setTItem] = useState(''); const [tJenis, setTJenis] = useState(''); const [tBulan, setTBulan] = useState(''); const [papBatal, setPapBatal] = useState(false);
+      const [had, setHad] = useState(50);
+      useEffect(() => { if (cariHantar && cariHantar.n) setCari(cariHantar.q); }, [cariHantar && cariHantar.n]);
+      useEffect(() => { if (!editId && lokasiTulis.includes(lokasiPilihan)) setBorang(b => ({ ...b, lokasi: lokasiPilihan })); }, [lokasiPilihan]);
+
+      const set = (k) => (e) => setBorang(b => ({ ...b, [k]: e.target.value }));
+      const rekodEdit = editId ? transaksi.find(t => t.id === editId) : null;
+      const berpasangan = !!(rekodEdit && rekodEdit.pasangan);
+      const lokasiKawalan = (t) => { if (!t.pasangan || t.arah === 'Keluar') return t.lokasi; const p = transaksi.find(x => x.id === t.pasangan); return p ? p.lokasi : null; };
+      const bolehUbah = (t) => aktif(t) && lokasiTulis.includes(lokasiKawalan(t));
+
+      const jenisBerkesan = berpasangan ? rekodEdit.jenis : borang.jenis;
+      const keluar = !JENIS_MASUK.includes(jenisBerkesan);
+      const bakiSemasa = useMemo(() => transaksi.filter(t => aktif(t) && t.lokasi === borang.lokasi && t.item === borang.item && t.id !== editId).reduce((s, t) => s + (isMasuk(t) ? t.kuantiti : -t.kuantiti), 0), [transaksi, borang.lokasi, borang.item, editId]);
+      const qty = Number(borang.kuantiti) || 0;
+      const bakiSelepas = bakiSemasa + (keluar ? -qty : qty);
+
+      const hantar = async (paksa = false) => {
+        if (!(Number.isInteger(qty) && qty > 0)) return paparMesej('Sila masukkan kuantiti nombor bulat lebih daripada 0.');
+        setSimpan(true);
+        try {
+          const p = { ...borang, kuantiti: qty, paksa };
+          let d;
+          if (editId) d = await api('kemaskini', { ...p, id: editId });
+          else if (borang.jenis === 'Pindahan Keluar' && borang.lokasiPenerima) d = await api('pindahan', p);
+          else d = await api('tambah', p);
+          terimaData(d); setEditId(null); setBorang(kosong());
+        } catch (e) {
+          if (e.kod === 'BAKI_TIDAK_CUKUP' && kebenaran.paksaBaki && !paksa) {
+            setDialog({ tajuk: 'Baki tidak mencukupi', bahaya: true, labelYa: 'Paksa simpan', mesej: `${e.message}\n\nSebagai Admin UPK, anda boleh paksa simpan. Tindakan ini akan ditanda "DIPAKSA" dalam jejak audit.`, onYa: async () => { setDialog(null); await hantar(true); } });
+          } else paparMesej(e.message, 'Tidak disimpan');
+        } finally { setSimpan(false); }
+      };
+
+      const mulaEdit = (t) => { setEditId(t.id); setBorang({ tarikh: t.tarikh, lokasi: t.lokasi, jenis: t.jenis, item: t.item, kuantiti: t.kuantiti, siriKursus: t.siriKursus || '', jumlahPeserta: t.jumlahPeserta ?? '', rujukan: t.rujukan || '', catatan: t.catatan || '', lokasiPenerima: '', sebab: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+      const batal = (t, paksa = false) => setDialog({
+        tajuk: 'Batalkan rekod', bahaya: true, labelYa: 'Batalkan rekod',
+        mesej: `${t.item} · ${fmtNo(t.kuantiti)} unit · ${fmtTarikh(t.tarikh)} · ${t.lokasi}${t.pasangan ? '\n\nIni rekod pindahan. Kedua-dua rekod (keluar & masuk) akan dibatalkan.' : ''}\n\nRekod tidak dipadam. Ia ditanda BATAL dan tidak lagi dikira dalam baki.`,
+        input: { label: 'Sebab pembatalan', placeholder: 'Cth: Salah masukkan kuantiti, rekod berganda…', min: 5 },
+        onYa: async (sebab) => {
+          try { terimaData(await api('batal', { id: t.id, sebab, paksa })); setDialog(null); if (editId === t.id) { setEditId(null); setBorang(kosong()); } }
+          catch (e) {
+            if (e.kod === 'BAKI_TIDAK_CUKUP' && kebenaran.paksaBaki && !paksa) setDialog({ tajuk: 'Pembatalan menjejaskan baki', bahaya: true, labelYa: 'Paksa batal', mesej: e.message + '\n\nStok ini sudah digunakan. Paksa batal sebagai Admin UPK?', onYa: async () => { try { terimaData(await api('batal', { id: t.id, sebab, paksa: true })); setDialog(null); } catch (e2) { paparMesej(e2.message, 'Gagal'); } } });
+            else paparMesej(e.message, 'Gagal dibatalkan');
+          }
+        }
+      });
+
+      const senarai = useMemo(() => {
+        const q = cari.trim().toLowerCase();
+        return dataLokasi.filter(t => (papBatal || aktif(t)) && (!tItem || t.item === tItem) && (!tJenis || t.jenis === tJenis) && (!tBulan || t.tarikh.startsWith(tBulan)) &&
+          (!q || [t.id, t.item, t.jenis, t.rujukan, t.siriKursus, t.catatan, t.direkodOleh, t.lokasi].join(' ').toLowerCase().includes(q)));
+      }, [dataLokasi, cari, tItem, tJenis, tBulan, papBatal]);
+      const bilBatal = dataLokasi.filter(t => !aktif(t)).length;
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 [&>*]:min-w-0">
+          {bolehTulis ? (
+          <Kad className="lg:col-span-4 h-fit lg:sticky lg:top-24" title={<span className={`flex items-center gap-2 ${editId ? 'text-blue-700' : ''}`}>{editId ? <Edit className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}{editId ? 'Kemaskini Rekod' : 'Rekod Transaksi Baharu'}</span>}>
+            <form onSubmit={e => { e.preventDefault(); hantar(); }} className="p-5 grid grid-cols-2 gap-3.5">
+              {editId && <div className="col-span-2 text-[11px] text-slate-500 -mb-1">ID: <span className="font-mono">{editId}</span></div>}
+              <Medan label="Lokasi" nota={editId && !isAdmin ? 'Lokasi rekod hanya boleh diubah oleh Admin UPK.' : null}>
+                <select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || (editId && (!isAdmin || berpasangan)) || lokasiTulis.length === 1}>{(editId && !lokasiTulis.includes(borang.lokasi) ? [borang.lokasi] : lokasiTulis).map(l => <option key={l} value={l}>{l}</option>)}</select>
+              </Medan>
+              <Medan label="Tarikh" span={1}><input type="date" max={hariIni} required className={inputCls} value={borang.tarikh} onChange={set('tarikh')} disabled={simpan} /></Medan>
+              <Medan label="Kuantiti" span={1}><input type="number" inputMode="numeric" min="1" step="1" required className={`${inputCls} tabular ${keluar && bakiSelepas < 0 ? 'border-red-400 ring-1 ring-red-200' : ''}`} value={borang.kuantiti} onChange={set('kuantiti')} disabled={simpan} /></Medan>
+              <Medan label="Item"><select className={inputCls} value={borang.item} onChange={set('item')} disabled={simpan}>{items.map(i => <option key={i}>{i}</option>)}</select></Medan>
+              <Medan label="Jenis transaksi"><select className={inputCls} value={jenisBerkesan} onChange={set('jenis')} disabled={simpan || berpasangan}>{JENIS_TRANSAKSI.map(j => <option key={j}>{j}</option>)}</select></Medan>
+              <div className="col-span-2 -mt-1 text-[11px] flex items-center justify-between rounded-md bg-slate-50 ring-1 ring-slate-200 px-3 py-1.5"><span className="text-slate-500">Baki {borang.item} di lokasi ini</span><span className={`font-semibold tabular ${bakiSelepas < 0 ? 'text-red-700' : 'text-slate-800'}`}>{fmtNo(bakiSemasa)}{qty > 0 && ` → ${fmtNo(bakiSelepas)}`}</span></div>
+              {!editId && borang.jenis === 'Pindahan Keluar' && (
+                <Medan label="Pindahan ke lokasi" nota="Pilih lokasi penerima supaya rekod Pindahan Masuk dicipta serentak di sana.">
+                  <select className={inputCls} value={borang.lokasiPenerima} onChange={set('lokasiPenerima')}><option value="">Tiada (keluar ke pihak luar)</option>{kebenaran.lokasiDilihat.concat(tetapan.lokasi.map(l => l.nama)).filter((l, i, a) => a.indexOf(l) === i && l !== borang.lokasi).map(l => <option key={l}>{l}</option>)}</select>
+                </Medan>
+              )}
+              {berpasangan && <div className="col-span-2 text-[11px] text-blue-800 bg-blue-50 ring-1 ring-blue-100 rounded-md px-3 py-2">Rekod pindahan berpasangan. Tarikh, item, kuantiti, rujukan dan catatan dikemaskini pada kedua-dua lokasi.</div>}
+              {jenisBerkesan === 'Pengeluaran Kursus' && (<>
+                <Medan label="Siri kursus" span={1}><input className={inputCls} placeholder="Siri 1/2026" value={borang.siriKursus} onChange={set('siriKursus')} disabled={simpan} /></Medan>
+                <Medan label="Jumlah peserta" span={1}><input type="number" inputMode="numeric" min="0" className={inputCls} value={borang.jumlahPeserta} onChange={set('jumlahPeserta')} disabled={simpan} /></Medan>
+              </>)}
+              <Medan label="No. DO / Rujukan"><input className={inputCls} value={borang.rujukan} onChange={set('rujukan')} disabled={simpan} /></Medan>
+              <Medan label="Catatan"><textarea rows="2" className={`${inputCls} resize-none`} value={borang.catatan} onChange={set('catatan')} disabled={simpan} /></Medan>
+              {editId && <Medan label="Sebab perubahan (direkod dalam audit)"><input className={inputCls} value={borang.sebab} onChange={set('sebab')} placeholder="Cth: Salah taip kuantiti" disabled={simpan} /></Medan>}
+              <div className="col-span-2 flex gap-2 pt-1">
+                <Butang type="submit" varian={editId ? 'biru' : 'utama'} className="flex-1 py-2.5" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}{editId ? 'Simpan Perubahan' : 'Simpan Transaksi'}</Butang>
+                {editId && <Butang type="button" varian="lembut" onClick={() => { setEditId(null); setBorang(kosong()); }}>Batal</Butang>}
+              </div>
+            </form>
+          </Kad>
+          ) : (
+            <Kad className="lg:col-span-4 h-fit"><div className="p-5 flex items-start gap-3 text-sm text-slate-600"><Eye className="w-5 h-5 text-slate-400 flex-shrink-0" /><div><div className="font-semibold text-slate-800">Akaun paparan sahaja</div>Peranan {pengguna.labelPeranan} boleh menyemak transaksi dan laporan, tetapi tidak merekod atau mengubah stok.</div></div></Kad>
+          )}
+
+          <Kad className="lg:col-span-8" title={`Senarai Transaksi (${fmtNo(senarai.length)})`} actions={bilBatal > 0 && <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={papBatal} onChange={e => setPapBatal(e.target.checked)} />Papar dibatal ({bilBatal})</label>}>
+            <div className="p-3 border-b border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="relative col-span-2 md:col-span-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari ID, rujukan, siri…" value={cari} onChange={e => setCari(e.target.value)} /></div>
+              <select className={`${inputCls} py-1.5`} value={tItem} onChange={e => setTItem(e.target.value)}><option value="">Semua item</option>{items.map(i => <option key={i}>{i}</option>)}</select>
+              <select className={`${inputCls} py-1.5`} value={tJenis} onChange={e => setTJenis(e.target.value)}><option value="">Semua jenis</option>{JENIS_TRANSAKSI.map(j => <option key={j}>{j}</option>)}</select>
+              <input type="month" className={`${inputCls} py-1.5`} value={tBulan} onChange={e => setTBulan(e.target.value)} />
+            </div>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-3 md:px-4 py-2.5">Tarikh</th>{lokasiPilihan === 'SEMUA' && <th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Lokasi</th>}<th className="text-left font-semibold px-3 py-2.5">Butiran</th><th className="text-right font-semibold px-3 py-2.5">Kuantiti</th>{bolehTulis && <th className="px-3 py-2.5 w-20"></th>}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {senarai.slice(0, had).map(t => { const ubah = bolehUbah(t); const batalTx = !aktif(t); return (
+                  <tr key={t.id} className={`align-top ${editId === t.id ? 'bg-blue-50' : batalTx ? 'bg-slate-50/70' : 'hover:bg-slate-50'}`}>
+                    <td className="px-3 md:px-4 py-2.5 whitespace-nowrap tabular text-slate-700">{fmtTarikh(t.tarikh)}</td>
+                    {lokasiPilihan === 'SEMUA' && <td className="px-3 py-2.5 text-xs text-slate-600 max-w-[150px] hidden md:table-cell">{t.lokasi}</td>}
+                    <td className="px-3 py-2.5">
+                      <div className={`font-semibold ${batalTx ? 'line-through text-slate-400' : 'text-slate-800'}`}>{t.item}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <Lencana cls={batalTx ? 'bg-slate-100 text-slate-500 ring-slate-200' : isMasuk(t) ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{t.jenis}</Lencana>
+                        {t.pasangan && <Lencana cls="bg-blue-50 text-blue-700 ring-blue-200">Pindahan</Lencana>}
+                        {batalTx && <Lencana cls="bg-red-50 text-red-700 ring-red-200">BATAL</Lencana>}
+                        {lokasiPilihan === 'SEMUA' && <span className="text-[11px] text-slate-500 md:hidden">{t.lokasi}</span>}
+                        {t.rujukan && <span className="text-[11px] text-slate-500">Ruj: {t.rujukan}</span>}
+                        {t.siriKursus && <span className="text-[11px] text-slate-500">{t.siriKursus}{t.jumlahPeserta !== '' && t.jumlahPeserta != null ? ` · ${t.jumlahPeserta} peserta` : ''}</span>}
+                      </div>
+                      {t.catatan && <div className="text-[11px] text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 mt-1 inline-block">{t.catatan}</div>}
+                      {batalTx && <div className="text-[11px] text-red-700 mt-1">Dibatal oleh {t.dibatalOleh} pada {fmtMasa(t.dibatalPada)}: {t.sebabBatal}</div>}
+                      <div className="text-[11px] text-slate-400 mt-1">{t.id} · {t.direkodOleh || '—'}{t.dikemaskiniOleh && ` · dikemaskini ${t.dikemaskiniOleh} ${fmtMasa(t.dikemaskiniPada)}`}</div>
+                    </td>
+                    <td className={`px-3 py-2.5 text-right tabular font-bold text-base whitespace-nowrap ${batalTx ? 'text-slate-400 line-through' : isMasuk(t) ? 'text-emerald-700' : 'text-slate-800'}`}>{isMasuk(t) ? '+' : '−'}{fmtNo(t.kuantiti)}</td>
+                    {bolehTulis && <td className="px-3 py-2.5">{ubah ? (
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => mulaEdit(t)} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => batal(t)} className="p-1.5 rounded-md text-red-700 hover:bg-red-50 ring-1 ring-red-200" title="Batalkan"><Ban className="w-3.5 h-3.5" /></button>
+                      </div>) : !batalTx && <div className="flex justify-end text-slate-300" title="Dikawal oleh lokasi lain"><Lock className="w-3.5 h-3.5" /></div>}
+                    </td>}
+                  </tr>
+                ); })}
+                {senarai.length === 0 && <tr><td colSpan="5" className="px-4 py-10 text-center text-sm text-slate-500">Tiada transaksi sepadan.</td></tr>}
+              </tbody>
+            </table></div>
+            {senarai.length > had && <div className="p-3 text-center border-t border-slate-100"><button onClick={() => setHad(h => h + 50)} className="text-sm font-medium text-brand-700 hover:underline">Papar 50 lagi ({fmtNo(senarai.length - had)} berbaki)</button></div>}
+          </Kad>
+        </div>
+      );
+    }
+
+    // ===================== LAPORAN =====================
+    function Laporan({ pengguna, tetapan, hariIni, dataLokasi, lokasiPilihan, paparMesej, paparToast }) {
+      const [bulan, setBulan] = useState(hariIni.slice(0, 7));
+      const [pengesah, setPengesah] = useState('');
+      const [bp, setBp] = useState(false);
+      const [proses, setProses] = useState(false);
+      const [arkib, setArkib] = useState(null);
+      const [y, m] = bulan.split('-').map(Number);
+      const dari = `${bulan}-01`, hingga = `${bulan}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      const semua = lokasiPilihan === 'SEMUA';
+      const hq = tetapan.lokasi[0] && tetapan.lokasi[0].nama;
+      const data = useMemo(() => kiraRingkasan(dataLokasi, tetapan.items, { dari, hingga, abaiPindahanDalaman: semua }), [dataLokasi, tetapan, bulan, semua]);
+      const txBulan = dataLokasi.filter(t => aktif(t) && t.tarikh >= dari && t.tarikh <= hingga);
+      const kursus = txBulan.filter(t => t.jenis === 'Pengeluaran Kursus');
+      const siri = [...new Set(kursus.map(t => t.siriKursus).filter(Boolean))];
+      const peserta = kursus.reduce((s, t) => s + (Number(t.jumlahPeserta) || 0), 0);
+      const peringkatUPK = semua || lokasiPilihan === hq;
+      const pengesahInfo = peringkatUPK ? { gelaran: 'Penolong Pengarah', jabatan: ['Bahagian Undang-Undang Keluarga Islam', 'Jabatan Hal Ehwal Agama Islam Pulau Pinang'] } : { gelaran: 'Pegawai Tadbir Agama', jabatan: [`Pejabat Agama Islam ${lokasiPilihan}`] };
+      const pejabat = peringkatUPK ? 'UPK BUUKI, JHEAIPP' : `Pejabat Agama Islam ${lokasiPilihan}`;
+      const masaJana = new Date();
+
+      const janaPDF = async () => {
+        if (!window.html2pdf) return paparMesej('Modul PDF belum dimuatkan. Cuba lagi sebentar.');
+        setProses(true); setArkib(null);
+        try {
+          const worker = window.html2pdf().set({ margin: [0.4, 0.5], filename: `Laporan Stok ${bulan}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } }).from(document.getElementById('laporan-cetak'));
+          const uri = await worker.output('datauristring');
+          const r = await api('upload_pdf', { lokasi: lokasiPilihan, bulan, data: uri.split(',')[1] });
+          setArkib(r); paparToast('Laporan disimpan ke arkib Google Drive');
+          try { await worker.save(); } catch (e) { /* muat turun mungkin disekat dalam iframe; pautan Drive tetap tersedia */ }
+        } catch (e) { paparMesej(e.message, 'Gagal menjana laporan'); }
+        finally { setProses(false); }
+      };
+      const th = 'border border-slate-700 px-2 py-1.5 font-semibold', td = 'border border-slate-700 px-2 py-1.5';
+      return (
+        <div className="max-w-4xl mx-auto space-y-4">
+          <Kad className="no-print"><div className="p-4 grid md:grid-cols-[1fr_1.3fr_auto] gap-3 items-end">
+            <Medan label="Bulan laporan"><input type="month" max={hariIni.slice(0, 7)} value={bulan} onChange={e => { setBulan(e.target.value); setArkib(null); }} className={inputCls} /></Medan>
+            <Medan label="Pegawai pengesah"><div className="flex gap-2"><input value={pengesah} onChange={e => setPengesah(e.target.value.toUpperCase())} placeholder="Nama (pilihan)" className={inputCls} /><label className="flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 rounded-lg ring-1 ring-slate-300 cursor-pointer"><input type="checkbox" checked={bp} onChange={e => setBp(e.target.checked)} />b.p.</label></div></Medan>
+            <div className="flex gap-2"><Butang varian="garis" onClick={() => { try { window.print(); } catch (e) { paparMesej('Cetakan tidak disokong di sini. Guna PDF.'); } }}><Printer className="w-4 h-4" />Cetak</Butang><Butang onClick={janaPDF} disabled={proses}>{proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}PDF & Arkib</Butang></div>
+          </div>
+          {arkib && <div className="px-4 pb-4"><a href={arkib.url} target="_blank" rel="noopener" className="flex items-center gap-2 text-sm text-brand-700 bg-brand-50 ring-1 ring-brand-100 rounded-lg px-3 py-2 hover:bg-brand-100"><ExternalLink className="w-4 h-4" />Buka PDF di Google Drive: {arkib.namaFail}</a></div>}
+          </Kad>
+          <div id="laporan-cetak" className="bg-white p-8 md:p-10 border border-slate-300 shadow-sm text-slate-900">
+            <div className="flex justify-between text-xs mb-4"><span>e-Stok JHEAIPP</span><span className="font-semibold">No. Fail: {tetapan.konfig.NO_FAIL || '.......................................'}</span></div>
+            <div className="flex flex-col items-center text-center mb-6">
+              <img src="https://i.postimg.cc/cCxL0BL6/LOGO_PULAU_PINANG.png" alt="Logo Pulau Pinang" className="h-20 mb-3" crossOrigin="anonymous" />
+              <div className="text-xs font-semibold uppercase tracking-wide">Jabatan Hal Ehwal Agama Islam Pulau Pinang</div>
+              <h1 className="text-base font-bold uppercase mt-1">Laporan Bulanan Stok Kursus Praperkahwinan Islam</h1>
+              <div className="w-24 border-t-2 border-slate-900 my-2" />
+            </div>
+            <table className="text-sm mb-5"><tbody>
+              <tr><td className="pr-3 py-0.5 font-semibold">Pusat / Daerah</td><td className="pr-2">:</td><td className="uppercase">{semua ? 'Keseluruhan negeri (semua pusat & daerah)' : lokasiPilihan}</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Tempoh</td><td className="pr-2">:</td><td>{fmtTarikh(dari)} hingga {fmtTarikh(hingga)} ({fmtBulan(bulan)})</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Bil. transaksi</td><td className="pr-2">:</td><td>{fmtNo(txBulan.length)}</td></tr>
+            </tbody></table>
+            <table className="w-full border-collapse text-sm mb-2">
+              <thead><tr className="bg-slate-100"><th className={`${th} w-10`}>Bil.</th><th className={`${th} text-left`}>Nama Item</th><th className={`${th} text-right`}>Baki Awal</th><th className={`${th} text-right`}>Masuk</th><th className={`${th} text-right`}>Keluar</th><th className={`${th} text-right`}>Baki Akhir</th></tr></thead>
+              <tbody>{tetapan.items.map((i, x) => { const d = data[i.nama]; return <tr key={i.nama}><td className={`${td} text-center`}>{x + 1}</td><td className={td}>{i.nama}</td><td className={`${td} text-right tabular`}>{fmtNo(d.awal)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.masuk)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.keluar)}</td><td className={`${td} text-right tabular font-bold bg-slate-50`}>{fmtNo(d.akhir)}</td></tr>; })}</tbody>
+            </table>
+            <p className="text-[11px] text-slate-600 mb-5">Baki Akhir = Baki Awal + Masuk − Keluar, setakat {fmtTarikh(hingga)}. Rekod yang dibatalkan tidak dikira.{semua && ' Pindahan antara lokasi tidak dikira sebagai masuk/keluar di peringkat negeri.'}</p>
+            {kursus.length > 0 && <div className="text-sm mb-6"><span className="font-semibold">Pengeluaran kursus:</span> {fmtNo(siri.length)} siri{siri.length ? ` (${siri.join(', ')})` : ''}, {fmtNo(peserta)} peserta direkodkan.</div>}
+            <div className="grid grid-cols-2 gap-10 text-sm mt-12">
+              <div><p className="mb-16">Disediakan oleh:</p><div className="border-t border-slate-900 pt-2 text-xs uppercase"><div className="font-bold">{pengguna.nama}</div>{pengguna.jawatan && <div>{pengguna.jawatan}</div>}<div>{pejabat}</div><div className="normal-case mt-1">Tarikh: ...............................</div></div></div>
+              <div><p className="mb-16">Disemak & disahkan oleh:</p><div className="border-t border-slate-900 pt-2 text-xs uppercase">{pengesah && <div className="font-bold">{pengesah}</div>}<div className="font-bold">{bp ? 'b.p. ' : ''}{pengesahInfo.gelaran}</div>{pengesahInfo.jabatan.map(j => <div key={j}>{j}</div>)}<div className="normal-case mt-1">Tarikh: ...............................</div></div></div>
+            </div>
+            <div className="mt-10 pt-2 border-t border-slate-200 text-[10px] text-slate-500 flex justify-between gap-4"><span>Dijana oleh Sistem e-Stok JHEAIPP V3</span><span>{fmtTarikh(hariIni)} {masaJana.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' })} · {pengguna.emel}</span></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== PENGGUNA (ADMIN UPK) =====================
+    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast }) {
+      const [data, setData] = useState(null);
+      const [borang, setBorang] = useState(null);
+      const [simpan, setSimpan] = useState(false);
+      const [cari, setCari] = useState('');
+      useEffect(() => { api('pengguna_senarai').then(setData).catch(e => paparMesej(e.message)); }, []);
+      const peranan = data ? data.peranan : [];
+      const infoPeranan = (kod) => peranan.find(p => p.kod === kod) || {};
+      const hq = tetapan.lokasi[0].nama;
+      const baru = () => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_PAD', lokasi: tetapan.lokasi[1] ? tetapan.lokasi[1].nama : hq, status: 'AKTIF' });
+      const set = (k) => (e) => setBorang(b => { const n = { ...b, [k]: e.target.value }; if (k === 'peranan') n.lokasi = infoPeranan(n.peranan).lokasiHQ ? hq : (n.lokasi === hq ? tetapan.lokasi[1].nama : n.lokasi); return n; });
+      const hantar = async (e) => {
+        e.preventDefault(); setSimpan(true);
+        try { setData(await api('pengguna_simpan', borang)); paparToast(borang.baru ? 'Pengguna didaftarkan' : 'Akaun dikemaskini'); setBorang(null); }
+        catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
+      };
+      if (!data) return <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+      const q = cari.toLowerCase();
+      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.lokasi, u.jawatan].join(' ').toLowerCase().includes(q));
+      const diriSendiri = borang && !borang.baru && borang.emel === saya.emel;
+      return (
+        <div className="grid lg:grid-cols-12 gap-5 [&>*]:min-w-0">
+          <Kad className="lg:col-span-8" title={`Pengguna Berdaftar (${data.pengguna.length})`} actions={<Butang onClick={baru} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar pengguna</Butang>}>
+            <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, emel atau lokasi…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-3 md:px-4 py-2.5">Pengguna</th><th className="text-left font-semibold px-3 py-2.5">Peranan & lokasi</th><th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{senarai.map(u => (
+                <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
+                  <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
+                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-emas-100 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{infoPeranan(u.peranan).label || u.peranan}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div><div className="text-[11px] text-slate-500 mt-1">{u.lokasi}</div></td>
+                  <td className="px-3 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
+                  <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </Kad>
+          <div className="lg:col-span-4 space-y-4">
+            {borang ? (
+              <Kad title={borang.baru ? 'Daftar Pengguna' : 'Kemaskini Akaun'}>
+                <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
+                  <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}. Pengguna log masuk dengan akaun Google ini.` : 'Emel tidak boleh diubah. Daftar akaun baharu jika emel bertukar.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
+                  <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
+                  <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
+                  <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
+                  <Medan label="Lokasi" nota={infoPeranan(borang.peranan).lokasiHQ ? 'Peranan UPK sentiasa di HQ.' : null}><select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || infoPeranan(borang.peranan).lokasiHQ}>{tetapan.lokasi.filter(l => infoPeranan(borang.peranan).lokasiHQ ? l.nama === hq : l.nama !== hq).map(l => <option key={l.nama}>{l.nama}</option>)}</select></Medan>
+                  <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
+                  {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
+                  <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
+                </form>
+              </Kad>
+            ) : (
+              <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
+                <li><b className="text-slate-800">Admin UPK</b>: kawalan penuh, urus pengguna, jejak audit, paksa baki.</li>
+                <li><b className="text-slate-800">Kerani UPK</b>: rekod stok HQ & pindahan ke PAD, lihat semua lokasi.</li>
+                <li><b className="text-slate-800">Pemantau UPK</b>: lihat data & laporan seluruh negeri.</li>
+                <li><b className="text-slate-800">Kerani PAD</b>: rekod & urus stok daerah sendiri.</li>
+                <li><b className="text-slate-800">Pegawai PAD</b>: semak & pantau daerah sendiri.</li>
+              </ul></Kad>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== JEJAK AUDIT (ADMIN UPK) =====================
+    function JejakAudit({ paparMesej }) {
+      const [log, setLog] = useState(null);
+      const [tTindakan, setTTindakan] = useState(''); const [cari, setCari] = useState('');
+      useEffect(() => { api('audit', { had: 1000 }).then(d => setLog(d.log)).catch(e => { paparMesej(e.message); setLog([]); }); }, []);
+      const warna = (t) => t.includes('BATAL') ? 'bg-red-50 text-red-800 ring-red-200' : t.includes('KEMASKINI') ? 'bg-blue-50 text-blue-800 ring-blue-200' : t.includes('TAMBAH') ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : t.includes('PINDAHAN') ? 'bg-indigo-50 text-indigo-800 ring-indigo-200' : 'bg-slate-100 text-slate-700 ring-slate-200';
+      const ringkas = (s) => { if (!s) return ''; try { const o = JSON.parse(s); if (o.keluar) return `${o.keluar.item} ${o.keluar.kuantiti}: ${o.keluar.lokasi} → ${o.masuk.lokasi}`; if (o.item) return `${fmtTarikh(o.tarikh)} · ${o.lokasi} · ${o.item} · ${o.jenis} · ${o.kuantiti}`; if (o.peranan) return `${o.nama || o.emel} · ${o.peranan} · ${o.lokasi || ''} ${o.status || ''}`; if (o.status) return o.status; if (o.namaFail) return o.namaFail; if (o.laporan) return o.laporan.slice(0, 2).join(' · '); return ''; } catch (e) { return s.slice(0, 120); } };
+      const jenis = log ? [...new Set(log.map(l => l.tindakan))].sort() : [];
+      const q = cari.toLowerCase();
+      const senarai = (log || []).filter(l => (!tTindakan || l.tindakan === tTindakan) && (!q || [l.nama, l.emel, l.idRekod, l.sebab, l.sebelum, l.selepas].join(' ').toLowerCase().includes(q)));
+      return (
+        <Kad title="Jejak Audit" actions={<span className="text-[11px] text-slate-500">Log hanya boleh ditambah, tidak boleh diubah melalui sistem</span>}>
+          <div className="p-3 border-b border-slate-100 grid grid-cols-2 gap-2">
+            <div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, ID rekod, sebab…" value={cari} onChange={e => setCari(e.target.value)} /></div>
+            <select className={`${inputCls} py-1.5`} value={tTindakan} onChange={e => setTTindakan(e.target.value)}><option value="">Semua tindakan</option>{jenis.map(t => <option key={t}>{t}</option>)}</select>
+          </div>
+          {!log ? <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left px-3 md:px-4 py-2.5 font-semibold">Masa</th><th className="text-left px-3 py-2.5 font-semibold">Pengguna</th><th className="text-left px-3 py-2.5 font-semibold">Tindakan</th><th className="text-left px-3 py-2.5 font-semibold">Butiran</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{senarai.slice(0, 300).map((l, i) => (
+                <tr key={i} className="align-top hover:bg-slate-50">
+                  <td className="px-4 py-2 whitespace-nowrap tabular text-xs">{fmtMasa(l.masa)}</td>
+                  <td className="px-3 py-2 text-xs"><div className="font-medium text-slate-800">{l.nama}</div><div className="text-slate-500">{l.peranan}{l.lokasi && ` · ${l.lokasi}`}</div></td>
+                  <td className="px-3 py-2"><Lencana cls={warna(l.tindakan)}>{l.tindakan}</Lencana>{l.idRekod && <div className="text-[11px] text-slate-400 font-mono mt-1">{l.idRekod}</div>}</td>
+                  <td className="px-3 py-2 text-xs text-slate-700">{l.sebelum && <div className="text-slate-500">Sebelum: {ringkas(l.sebelum)}</div>}{l.selepas && <div>Selepas: {ringkas(l.selepas)}</div>}{l.sebab && <div className="text-amber-800 mt-0.5">Sebab: {l.sebab}</div>}</td>
+                </tr>
+              ))}{senarai.length === 0 && <tr><td colSpan="4" className="px-4 py-10 text-center text-slate-500">Tiada rekod.</td></tr>}</tbody>
+            </table></div>
+          )}
+        </Kad>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+
+<div id="demo-panel"></div>
+<script>
+(function () {
+  const D = window.__estokDemo, el = document.getElementById('demo-panel');
+  const label = { ADMIN_UPK: 'Admin UPK', KERANI_UPK: 'Kerani UPK', PEMANTAU_UPK: 'Pemantau UPK', KERANI_PAD: 'Kerani PAD', PEGAWAI_PAD: 'Pegawai PAD' };
+  const semasa = D.PENGGUNA_DEMO.find(u => u.emel === D.semasa());
+  let buka = false;
+  function lukis() {
+    const nama = semasa ? semasa.nama.replace(/^(En\.|Ustaz)\s+/, '').split(/\s+(bin|binti)\s+/)[0] : 'Tidak berdaftar';
+    el.innerHTML = '';
+    if (buka) {
+      const k = document.createElement('div'); k.className = 'kotak';
+      k.innerHTML = '<h4>Mod Demo e-Stok V3</h4><p>Data contoh disimpan dalam pelayar ini sahaja. Pilih akaun untuk melihat sistem dari sudut setiap peranan.</p>';
+      D.PENGGUNA_DEMO.concat([{ emel: D.TIDAK_BERDAFTAR, nama: 'Staf belum didaftar', peranan: '', lokasi: 'Untuk lihat skrin akses ditolak' }]).forEach(u => {
+        const b = document.createElement('button'); b.className = 'u' + (u.emel === D.semasa() ? ' aktif' : '');
+        const bb = document.createElement('b'); bb.textContent = u.nama; const sp = document.createElement('span'); sp.textContent = (label[u.peranan] ? label[u.peranan] + ' · ' : '') + u.lokasi;
+        b.append(bb, sp); b.onclick = () => D.tukar(u.emel); k.appendChild(b);
+      });
+      const r = document.createElement('button'); r.className = 'reset'; r.textContent = 'Set semula data demo';
+      r.onclick = () => { if (confirm('Padam semua perubahan dan muat semula data contoh?')) D.reset(); };
+      k.appendChild(r); el.appendChild(k);
+    }
+    const p = document.createElement('button'); p.className = 'pil';
+    const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'DEMO';
+    const tx = document.createElement('span'); tx.textContent = (semasa ? label[semasa.peranan] + ': ' + nama : nama) + (buka ? '  ▾' : '  ▴');
+    p.append(tag, tx); p.onclick = () => { buka = !buka; lukis(); }; el.appendChild(p);
+  }
+  lukis();
+})();
+</script>
+
+</body>
+</html>
