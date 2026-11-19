@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem e-Stok JHEAIPP</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: { 50: '#eef7f2', 100: '#d5ebdf', 600: '#1f6b4a', 700: '#185a3d', 800: '#124632', 900: '#0c3324' },
+            emas: { 500: '#b8912f', 100: '#f6efd9' }
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.0/babel.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.294.0?deps=react@18.2.0"
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    @media print {
+      body { background: white !important; }
+      .no-print { display: none !important; }
+      #laporan-cetak { border: none !important; box-shadow: none !important; padding: 0 !important; }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-slate-100">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useMemo, useEffect, useCallback } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import {
+      Package, ArrowRightLeft, FileText, PlusCircle, MapPin, LayoutDashboard, Search, RefreshCw, Loader2,
+      Edit, Trash2, LogIn, LogOut, AlertCircle, Download, User, ShieldCheck, Settings, History,
+      AlertTriangle, TrendingUp, TrendingDown, Boxes, CheckCircle2, X, Printer, Lock
+    } from 'lucide-react';
+
+    // ===================== KONFIGURASI =====================
+    const API_URL = "https://script.google.com/macros/s/AKfycbz_byHPGQLLcaOciltsEwXCvboutRXC6KHXg6CGh0KAc2d3B1WVz5I2ZUYURUJE3qsm/exec";
+
+    // Senarai nama untuk dropdown login sahaja. Peranan sebenar ditentukan oleh SERVER.
+    const SENARAI_NAMA = [
+      "En. Muhammad Imran bin Mohamed Radzi",
+      "Ustazah Yasmin binti Hamdan",
+      "Puan Nor Atika binti Shahrudin",
+      "Ustazah Ros Amira binti Rusli",
+      "Ustazah Nor Fazirah binti Abdul Rashid",
+      "Kerani Pusat - Daerah Seberang Perai Tengah",
+      "Kerani Pusat - Daerah Seberang Perai Selatan",
+      "Kerani Pusat - Daerah Barat Daya",
+      "Kerani Pusat - Daerah SPU (Butterworth)",
+      "Kerani Pusat - Daerah SPU (Kepala Batas)",
+      "Kerani Pusat - Daerah Timur Laut"
+    ];
+    const JENIS_TRANSAKSI = ["Terima Pembekal", "Pindahan Masuk", "Pindahan Keluar", "Pengeluaran Kursus", "Pelarasan (+)", "Pelarasan (-)", "Cabutan Sijil"];
+    const JENIS_MASUK = ["Terima Pembekal", "Pindahan Masuk", "Pelarasan (+)"];
+    const LABEL_PERANAN = { SUPERADMIN: "Pentadbir Sistem", HQ: "Pegawai HQ", DAERAH: "Kerani Daerah" };
+    const BULAN = ["JANUARI", "FEBRUARI", "MAC", "APRIL", "MEI", "JUN", "JULAI", "OGOS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DISEMBER"];
+
+    // ===================== UTILITI =====================
+    // Tarikh tempatan (MYT), bukan UTC — elak bug tarikh lari sehari sebelum 8 pagi.
+    const hariIni = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const bulanIni = () => hariIni().slice(0, 7);
+    const fmtTarikh = (iso) => { if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso || ''; const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+    const fmtBulan = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-'); return `${BULAN[parseInt(m, 10) - 1]} ${y}`; };
+    const fmtNo = (n) => Number(n || 0).toLocaleString('ms-MY');
+    const isMasuk = (t) => t.arah === 'Masuk' || JENIS_MASUK.includes(t.jenis);
+    const simpanSesi = (v) => { try { v ? sessionStorage.setItem('estok_sesi', JSON.stringify(v)) : sessionStorage.removeItem('estok_sesi'); } catch (e) {} };
+    const bacaSesi = () => { try { return JSON.parse(sessionStorage.getItem('estok_sesi') || 'null'); } catch (e) { return null; } };
+
+    async function panggilApi(action, payload = {}, token = null) {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // tiada preflight CORS
+        body: JSON.stringify({ action, token, ...payload })
+      });
+      const j = await res.json();
+      if (j.status !== 'ok') throw new Error(j.mesej || 'Ralat tidak diketahui');
+      return j;
+    }
+
+    // Kira baki/masuk/keluar bagi satu set transaksi.
+    function kiraRingkasan(senarai, items, { dari = null, hingga = null, abaiPindahanDalaman = false } = {}) {
+      const r = {};
+      items.forEach(i => { r[i.nama] = { awal: 0, masuk: 0, keluar: 0, akhir: 0 }; });
+      senarai.forEach(t => {
+        const x = r[t.item]; if (!x) return;
+        if (hingga && t.tarikh > hingga) return;
+        const q = Number(t.kuantiti) || 0;
+        const tanda = isMasuk(t) ? q : -q;
+        if (dari && t.tarikh < dari) { x.awal += tanda; x.akhir += tanda; return; }
+        x.akhir += tanda;
+        if (abaiPindahanDalaman && t.pasangan) return; // pindahan antara lokasi: neutral di peringkat keseluruhan
+        if (tanda > 0) x.masuk += q; else x.keluar += q;
+      });
+      return r;
+    }
+
+    const statusStok = (baki, min) => {
+      if (baki < 0) return { label: 'Negatif', cls: 'bg-red-100 text-red-800 ring-red-200' };
+      if (baki === 0 && !min) return { label: 'Tiada stok', cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
+      if (baki === 0) return { label: 'Habis', cls: 'bg-red-50 text-red-700 ring-red-200' };
+      if (min > 0 && baki <= min) return { label: 'Rendah', cls: 'bg-amber-50 text-amber-800 ring-amber-200' };
+      return { label: 'Mencukupi', cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200' };
+    };
+
+    // ===================== KOMPONEN KECIL =====================
+    const Lencana = ({ children, cls }) => <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ring-1 ring-inset ${cls}`}>{children}</span>;
+
+    const Kad = ({ title, children, actions, className = '' }) => (
+      <section className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>
+        {(title || actions) && (
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200">
+            <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+            <div className="flex items-center gap-2">{actions}</div>
+          </div>
+        )}
+        {children}
+      </section>
+    );
+
+    const KadKPI = ({ label, nilai, sub, Icon, tona = 'slate' }) => {
+      const tonaCls = { slate: 'bg-slate-100 text-slate-700', hijau: 'bg-emerald-50 text-emerald-700', merah: 'bg-red-50 text-red-700', amber: 'bg-amber-50 text-amber-700' }[tona];
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-start gap-3">
+          <div className={`p-2 rounded-lg ${tonaCls}`}><Icon className="w-5 h-5" /></div>
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-slate-500">{label}</div>
+            <div className="text-2xl font-bold text-slate-900 tabular leading-tight">{nilai}</div>
+            {sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}
+          </div>
+        </div>
+      );
+    };
+
+    const Medan = ({ label, children, span = 2, nota }) => (
+      <div className={span === 2 ? 'col-span-2' : ''}>
+        <label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>
+        {children}
+        {nota && <p className="text-[11px] text-slate-500 mt-1">{nota}</p>}
+      </div>
+    );
+    const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 disabled:bg-slate-50 disabled:text-slate-400";
+
+    // ===================== APP =====================
+    function App() {
+      const [sesi, setSesi] = useState(bacaSesi()); // { token, pengguna, tetapan, lokasi }
+      const [transaksi, setTransaksi] = useState([]);
+      const [tetapan, setTetapan] = useState(sesi?.tetapan || { items: [], noFail: '' });
+      const [senaraiLokasi, setSenaraiLokasi] = useState(sesi?.lokasi || []);
+      const [tab, setTab] = useState('dashboard');
+      const [lokasiPilihan, setLokasiPilihan] = useState(sesi ? (sesi.pengguna.peranan === 'DAERAH' ? sesi.pengguna.lokasi : 'SEMUA') : 'SEMUA');
+      const [memuat, setMemuat] = useState(false);
+      const [kemasKiniTerakhir, setKemasKiniTerakhir] = useState(null);
+      const [dialog, setDialog] = useState(null);
+      const [toast, setToast] = useState(null);
+
+      const pengguna = sesi?.pengguna;
+      const isAdmin = pengguna?.peranan === 'SUPERADMIN';
+      const bolehSemua = pengguna && pengguna.peranan !== 'DAERAH';
+      const bolehUbah = useCallback((t) => isAdmin || (t.direkodOleh === pengguna?.nama && (bolehSemua || t.lokasi === pengguna?.lokasi)), [isAdmin, pengguna, bolehSemua]);
+
+      const paparToast = (mesej, jenis = 'ok') => { setToast({ mesej, jenis }); setTimeout(() => setToast(null), 3500); };
+      const paparMesej = (mesej, tajuk = 'Makluman') => setDialog({ tajuk, mesej });
+      const paparSahkan = (mesej, onYa, tajuk = 'Pengesahan', bahaya = false) => setDialog({ tajuk, mesej, onYa, bahaya });
+
+      const api = useCallback(async (action, payload) => {
+        try { return await panggilApi(action, payload, sesi?.token); }
+        catch (e) {
+          if (e.message === 'SESI_TAMAT') { simpanSesi(null); setSesi(null); throw new Error('Sesi anda telah tamat. Sila log masuk semula.'); }
+          throw e;
+        }
+      }, [sesi]);
+
+      const muatData = useCallback(async () => {
+        if (!sesi) return;
+        setMemuat(true);
+        try {
+          const j = await api('senarai');
+          setTransaksi(j.data.slice().sort((a, b) => (b.tarikh || '').localeCompare(a.tarikh || '')));
+          if (j.tetapan) setTetapan(j.tetapan);
+          setKemasKiniTerakhir(new Date());
+        } catch (e) { paparMesej(e.message, 'Gagal memuat data'); }
+        finally { setMemuat(false); }
+      }, [api, sesi]);
+
+      useEffect(() => { muatData(); }, [sesi?.token]);
+
+      const logMasuk = (s) => {
+        simpanSesi(s); setSesi(s); setTetapan(s.tetapan); setSenaraiLokasi(s.lokasi);
+        setLokasiPilihan(s.pengguna.peranan === 'DAERAH' ? s.pengguna.lokasi : 'SEMUA'); setTab('dashboard');
+      };
+      const logKeluar = () => paparSahkan('Log keluar dari sistem?', async () => {
+        try { await panggilApi('logout', {}, sesi?.token); } catch (e) {}
+        simpanSesi(null); setSesi(null); setTransaksi([]); setDialog(null);
+      });
+
+      const dataLokasi = useMemo(() => lokasiPilihan === 'SEMUA' ? transaksi : transaksi.filter(t => t.lokasi === lokasiPilihan), [transaksi, lokasiPilihan]);
+
+      if (!sesi) return <SkrinLogin onBerjaya={logMasuk} />;
+
+      const tabs = [
+        { id: 'dashboard', label: 'Papan Pemuka', Icon: LayoutDashboard },
+        { id: 'transaksi', label: 'Transaksi', Icon: ArrowRightLeft },
+        { id: 'laporan', label: 'Laporan Bulanan', Icon: FileText },
+        ...(isAdmin ? [{ id: 'audit', label: 'Log Audit', Icon: History }, { id: 'tetapan', label: 'Tetapan', Icon: Settings }] : [])
+      ];
+
+      const konteks = { api, sesi, pengguna, isAdmin, bolehSemua, bolehUbah, tetapan, setTetapan, senaraiLokasi, lokasiPilihan, transaksi, dataLokasi, muatData, paparMesej, paparSahkan, paparToast, setDialog };
+
+      return (
+        <div className="min-h-screen text-slate-800">
+          {/* HEADER */}
+          <header className="bg-brand-900 text-white no-print">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2 rounded-lg"><Package className="h-6 w-6 text-emas-100" /></div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-brand-100/80">Unit Pembangunan Keluarga · BUUKI · JHEAIPP</div>
+                  <h1 className="text-lg font-bold leading-tight">Sistem e-Stok Kursus Praperkahwinan</h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex flex-col items-end mr-1">
+                  <span className="text-sm font-medium leading-tight">{pengguna.nama}</span>
+                  <span className="text-[11px] text-emas-100 flex items-center gap-1">{isAdmin && <ShieldCheck className="w-3 h-3" />}{LABEL_PERANAN[pengguna.peranan]}</span>
+                </div>
+                <div className="flex items-center rounded-lg bg-white/10 ring-1 ring-white/15 px-2.5 py-1.5">
+                  <MapPin className="h-4 w-4 mr-1.5 text-emas-100 flex-shrink-0" />
+                  <select className="bg-transparent text-white text-sm font-medium focus:outline-none max-w-[220px] disabled:opacity-90" value={lokasiPilihan}
+                    onChange={e => setLokasiPilihan(e.target.value)} disabled={!bolehSemua}>
+                    {bolehSemua && <option value="SEMUA" className="text-slate-900">Semua Lokasi</option>}
+                    {senaraiLokasi.map(l => <option key={l} value={l} className="text-slate-900">{l}</option>)}
+                  </select>
+                </div>
+                <button onClick={logKeluar} className="p-2 rounded-lg bg-white/10 hover:bg-red-600 ring-1 ring-white/15 transition-colors" title="Log keluar"><LogOut className="w-4 h-4" /></button>
+              </div>
+            </div>
+          </header>
+
+          {/* NAV */}
+          <nav className="bg-white border-b border-slate-200 no-print sticky top-0 z-30">
+            <div className="max-w-7xl mx-auto px-2 flex items-center justify-between overflow-x-auto">
+              <div className="flex">
+                {tabs.map(({ id, label, Icon }) => (
+                  <button key={id} onClick={() => setTab(id)}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                    <Icon className="w-4 h-4" /> {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 pl-3">
+                {kemasKiniTerakhir && <span className="hidden md:inline text-[11px] text-slate-500 whitespace-nowrap">Data setakat {kemasKiniTerakhir.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' })}</span>}
+                <button onClick={muatData} disabled={memuat} className="flex items-center gap-1.5 text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg ring-1 ring-brand-100 whitespace-nowrap">
+                  <RefreshCw className={`w-3.5 h-3.5 ${memuat ? 'animate-spin' : ''}`} /> {memuat ? 'Menyelaras…' : 'Segar Semula'}
+                </button>
+              </div>
+            </div>
+          </nav>
+
+          <main className="max-w-7xl mx-auto p-4 md:p-6">
+            {tab === 'dashboard' && <PapanPemuka {...konteks} />}
+            {tab === 'transaksi' && <Transaksi {...konteks} />}
+            {tab === 'laporan' && <Laporan {...konteks} />}
+            {tab === 'audit' && isAdmin && <LogAudit {...konteks} />}
+            {tab === 'tetapan' && isAdmin && <Tetapan {...konteks} />}
+          </main>
+
+          {dialog && <Dialog {...dialog} onTutup={() => setDialog(null)} />}
+          {toast && (
+            <div className={`fixed bottom-5 right-5 z-[110] flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium no-print ${toast.jenis === 'ok' ? 'bg-brand-800 text-white' : 'bg-red-600 text-white'}`}>
+              {toast.jenis === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {toast.mesej}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ===================== LOGIN =====================
+    function SkrinLogin({ onBerjaya }) {
+      const [nama, setNama] = useState('');
+      const [namaManual, setNamaManual] = useState('');
+      const [kataLaluan, setKataLaluan] = useState('');
+      const [ralat, setRalat] = useState('');
+      const [proses, setProses] = useState(false);
+      const isKerani = nama.startsWith('Kerani Pusat');
+
+      const hantar = async (e) => {
+        e.preventDefault(); setRalat('');
+        if (!nama) return setRalat('Sila pilih nama pengguna.');
+        if (isKerani && namaManual.trim().length < 3) return setRalat('Sila isi nama penuh anda.');
+        setProses(true);
+        try {
+          const j = await panggilApi('login', { nama, namaManual, kataLaluan });
+          onBerjaya({ token: j.token, pengguna: j.pengguna, tetapan: j.tetapan, lokasi: j.lokasi });
+        } catch (err) { setRalat(err.message); setKataLaluan(''); }
+        finally { setProses(false); }
+      };
+
+      return (
+        <div className="min-h-screen grid lg:grid-cols-2">
+          <div className="hidden lg:flex flex-col justify-between bg-brand-900 text-white p-12">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-brand-100/70">Jabatan Hal Ehwal Agama Islam Pulau Pinang</div>
+            <div>
+              <h1 className="text-3xl font-bold leading-tight">Sistem Pengurusan Stok<br />Kursus Praperkahwinan Islam</h1>
+              <p className="mt-4 text-brand-100/80 max-w-md text-sm leading-relaxed">Rekod penerimaan, pengeluaran dan pindahan stok bagi Unit Pembangunan Keluarga dan semua pejabat agama daerah, dengan laporan bulanan yang boleh disahkan.</p>
+            </div>
+            <div className="text-xs text-brand-100/60">Bahagian Undang-Undang Keluarga Islam (BUUKI)</div>
+          </div>
+          <div className="flex items-center justify-center p-6 bg-slate-50">
+            <div className="w-full max-w-sm">
+              <img src="https://i.postimg.cc/zB2rDqSx/Islamic-family-law-logo-design.png" alt="Logo" className="h-24 mx-auto mb-4 object-contain" crossOrigin="anonymous" />
+              <h2 className="text-xl font-bold text-slate-900 text-center">Log Masuk</h2>
+              <p className="text-sm text-slate-500 text-center mb-6">Sistem e-Stok · Unit Pembangunan Keluarga</p>
+              <form onSubmit={hantar} className="space-y-3">
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <select className={`${inputCls} pl-9 py-2.5`} value={nama} onChange={e => { setNama(e.target.value); setNamaManual(''); }}>
+                    <option value="" disabled>Pilih nama pengguna</option>
+                    {SENARAI_NAMA.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                {isKerani && (
+                  <input type="text" placeholder="Nama penuh anda" className={`${inputCls} py-2.5`} value={namaManual} onChange={e => setNamaManual(e.target.value.toUpperCase())} />
+                )}
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input type="password" placeholder="Kata laluan" autoComplete="current-password" className={`${inputCls} pl-9 py-2.5`} value={kataLaluan} onChange={e => setKataLaluan(e.target.value)} required />
+                </div>
+                {ralat && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 ring-1 ring-red-200 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{ralat}</div>}
+                <button type="submit" disabled={proses} className="w-full bg-brand-700 hover:bg-brand-800 text-white font-semibold py-2.5 rounded-lg flex justify-center items-center gap-2 disabled:opacity-70">
+                  {proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />} Log Masuk
+                </button>
+              </form>
+              <p className="text-[11px] text-slate-500 mt-6 leading-relaxed">Notis: Nama anda direkod pada setiap transaksi dan log audit bagi tujuan akauntabiliti stok jabatan. Akses terhad kepada pegawai yang diberi kuasa.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== PAPAN PEMUKA =====================
+    function PapanPemuka({ tetapan, dataLokasi, transaksi, lokasiPilihan, senaraiLokasi }) {
+      const items = tetapan.items;
+      const baki = useMemo(() => kiraRingkasan(dataLokasi, items, { abaiPindahanDalaman: lokasiPilihan === 'SEMUA' }), [dataLokasi, items, lokasiPilihan]);
+      const dariBulan = bulanIni() + '-01';
+      const bulan = useMemo(() => kiraRingkasan(dataLokasi, items, { dari: dariBulan, abaiPindahanDalaman: lokasiPilihan === 'SEMUA' }), [dataLokasi, items, lokasiPilihan]);
+      const bilTxBulan = dataLokasi.filter(t => t.tarikh >= dariBulan).length;
+      const masukBulan = Object.values(bulan).reduce((s, x) => s + x.masuk, 0);
+      const keluarBulan = Object.values(bulan).reduce((s, x) => s + x.keluar, 0);
+
+      // Amaran dikira per lokasi (stok rendah di satu daerah tak tersorok oleh jumlah keseluruhan)
+      const lokasiDisemak = lokasiPilihan === 'SEMUA' ? senaraiLokasi : [lokasiPilihan];
+      const matriks = useMemo(() => {
+        const m = {};
+        lokasiDisemak.forEach(l => { m[l] = kiraRingkasan(transaksi.filter(t => t.lokasi === l), items); });
+        return m;
+      }, [transaksi, items, lokasiPilihan, senaraiLokasi]);
+      const amaran = [];
+      lokasiDisemak.forEach(l => items.forEach(i => {
+        const b = matriks[l]?.[i.nama]?.akhir ?? 0;
+        if (b < 0 || (i.stokMin > 0 && b <= i.stokMin)) amaran.push({ lokasi: l, item: i.nama, baki: b, min: i.stokMin });
+      }));
+
+      return (
+        <div className="space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">{lokasiPilihan === 'SEMUA' ? 'Semua Lokasi' : lokasiPilihan}</h2>
+            <p className="text-sm text-slate-500">Ringkasan stok semasa dan aktiviti {fmtBulan(bulanIni()).toLowerCase().replace(/^\w/, c => c.toUpperCase())}</p>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KadKPI label="Transaksi bulan ini" nilai={fmtNo(bilTxBulan)} sub={`${fmtNo(dataLokasi.length)} rekod keseluruhan`} Icon={Boxes} />
+            <KadKPI label="Unit masuk bulan ini" nilai={fmtNo(masukBulan)} Icon={TrendingUp} tona="hijau" />
+            <KadKPI label="Unit keluar bulan ini" nilai={fmtNo(keluarBulan)} Icon={TrendingDown} tona="slate" />
+            <KadKPI label="Amaran stok" nilai={fmtNo(amaran.length)} sub={amaran.length ? 'Rendah, habis atau negatif' : 'Tiada isu'} Icon={AlertTriangle} tona={amaran.length ? 'amber' : 'hijau'} />
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-5">
+            <Kad title="Baki Stok Semasa" className="lg:col-span-2">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                    <tr><th className="text-left font-semibold px-5 py-2.5">Item</th><th className="text-right font-semibold px-3 py-2.5">Masuk</th><th className="text-right font-semibold px-3 py-2.5">Keluar</th><th className="text-right font-semibold px-3 py-2.5">Baki</th><th className="text-left font-semibold px-5 py-2.5">Status</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {items.map(i => {
+                      const b = baki[i.nama]; const st = statusStok(b.akhir, i.stokMin);
+                      return (
+                        <tr key={i.nama} className="hover:bg-slate-50">
+                          <td className="px-5 py-2.5 font-medium text-slate-800">{i.nama}</td>
+                          <td className="px-3 py-2.5 text-right tabular text-slate-600">{fmtNo(b.masuk)}</td>
+                          <td className="px-3 py-2.5 text-right tabular text-slate-600">{fmtNo(b.keluar)}</td>
+                          <td className={`px-3 py-2.5 text-right tabular font-bold text-base ${b.akhir < 0 ? 'text-red-700' : 'text-slate-900'}`}>{fmtNo(b.akhir)}</td>
+                          <td className="px-5 py-2.5"><Lencana cls={st.cls}>{st.label}</Lencana></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {lokasiPilihan === 'SEMUA' && <p className="px-5 py-2.5 text-[11px] text-slate-500 border-t border-slate-100">Pindahan antara lokasi tidak dikira sebagai masuk/keluar dalam paparan keseluruhan kerana ia bersih sifar.</p>}
+            </Kad>
+
+            <Kad title="Perlu Tindakan">
+              {amaran.length === 0 ? (
+                <div className="p-6 text-center text-sm text-slate-500"><CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />Semua item melebihi paras minimum.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+                  {amaran.sort((a, b) => a.baki - b.baki).map((a, k) => {
+                    const st = statusStok(a.baki, a.min);
+                    return (
+                      <li key={k} className="px-5 py-2.5 flex items-center justify-between gap-3">
+                        <div className="min-w-0"><div className="text-sm font-medium text-slate-800 truncate">{a.item}</div><div className="text-[11px] text-slate-500 truncate">{a.lokasi} · min {fmtNo(a.min)}</div></div>
+                        <div className="text-right flex-shrink-0"><div className="text-sm font-bold tabular">{fmtNo(a.baki)}</div><Lencana cls={st.cls}>{st.label}</Lencana></div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Kad>
+          </div>
+
+          {lokasiPilihan === 'SEMUA' && (
+            <Kad title="Baki Mengikut Lokasi">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[900px]">
+                  <thead className="bg-slate-50 text-slate-500 text-xs">
+                    <tr><th className="text-left font-semibold px-5 py-2.5 sticky left-0 bg-slate-50">Item</th>{senaraiLokasi.map(l => <th key={l} className="text-right font-semibold px-3 py-2.5">{l.replace('Daerah ', '')}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {items.map(i => (
+                      <tr key={i.nama} className="hover:bg-slate-50">
+                        <td className="px-5 py-2 font-medium sticky left-0 bg-white">{i.nama}</td>
+                        {senaraiLokasi.map(l => {
+                          const b = matriks[l]?.[i.nama]?.akhir ?? 0;
+                          const cls = b < 0 ? 'text-red-700 font-bold' : (i.stokMin > 0 && b <= i.stokMin ? 'text-amber-700 font-semibold' : 'text-slate-700');
+                          return <td key={l} className={`px-3 py-2 text-right tabular ${cls}`}>{fmtNo(b)}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Kad>
+          )}
+        </div>
+      );
+    }
+
+    // ===================== TRANSAKSI =====================
+    function Transaksi({ api, isAdmin, bolehSemua, bolehUbah, tetapan, senaraiLokasi, lokasiPilihan, transaksi, dataLokasi, muatData, paparMesej, paparSahkan, paparToast, setDialog, pengguna }) {
+      const items = tetapan.items.map(i => i.nama);
+      const kosong = () => ({ tarikh: hariIni(), lokasi: lokasiPilihan === 'SEMUA' ? (bolehSemua ? senaraiLokasi[0] : pengguna.lokasi) : lokasiPilihan, jenis: JENIS_TRANSAKSI[0], item: items[0] || '', kuantiti: '', siriKursus: '', jumlahPeserta: '', rujukan: '', catatan: '', penerima: '' });
+      const [borang, setBorang] = useState(kosong());
+      const [editId, setEditId] = useState(null);
+      const [simpan, setSimpan] = useState(false);
+      const [cari, setCari] = useState('');
+      const [tapisItem, setTapisItem] = useState('');
+      const [tapisJenis, setTapisJenis] = useState('');
+      const [tapisBulan, setTapisBulan] = useState('');
+      const [had, setHad] = useState(50);
+
+      useEffect(() => { if (!editId) setBorang(b => ({ ...b, lokasi: lokasiPilihan === 'SEMUA' ? b.lokasi : lokasiPilihan })); }, [lokasiPilihan]);
+
+      const set = (k) => (e) => setBorang(b => ({ ...b, [k]: e.target.value }));
+      const rekodEdit = editId ? transaksi.find(t => t.id === editId) : null;
+      const bolehPilihLokasi = editId ? isAdmin : bolehSemua;
+
+      const bakiSemasa = useMemo(() => transaksi.filter(t => t.lokasi === borang.lokasi && t.item === borang.item && t.id !== editId)
+        .reduce((s, t) => s + (isMasuk(t) ? Number(t.kuantiti) : -Number(t.kuantiti)), 0), [transaksi, borang.lokasi, borang.item, editId]);
+      const keluar = !JENIS_MASUK.includes(rekodEdit?.pasangan ? rekodEdit.jenis : borang.jenis);
+      const melebihi = keluar && Number(borang.kuantiti) > bakiSemasa;
+
+      const hantar = async (e, paksa = false) => {
+        e && e.preventDefault();
+        if (!(parseInt(borang.kuantiti, 10) > 0)) return paparMesej('Sila masukkan kuantiti yang sah.');
+        if (melebihi && !paksa) {
+          if (!isAdmin) return paparMesej(`Kuantiti keluar (${fmtNo(borang.kuantiti)}) melebihi baki ${borang.item} di ${borang.lokasi} (${fmtNo(bakiSemasa)}). Semak semula atau rekod penerimaan stok dahulu.`, 'Baki tidak mencukupi');
+          return paparSahkan(`Kuantiti melebihi baki (${fmtNo(bakiSemasa)}). Baki akan jadi negatif. Teruskan sebagai pentadbir?`, () => { setDialog(null); hantar(null, true); }, 'Baki tidak mencukupi', true);
+        }
+        setSimpan(true);
+        try {
+          const data = { tarikh: borang.tarikh, lokasi: borang.lokasi, item: borang.item, jenis: borang.jenis, kuantiti: borang.kuantiti, siriKursus: borang.siriKursus, jumlahPeserta: borang.jumlahPeserta, rujukan: borang.rujukan, catatan: borang.catatan, paksa };
+          if (editId) { await api('kemaskini', { id: editId, ...data }); paparToast('Rekod dikemaskini'); }
+          else if (borang.jenis === 'Pindahan Keluar' && borang.penerima) { await api('pindahan_pintar', { ...data, lokasiPenghantar: borang.lokasi, lokasiPenerima: borang.penerima }); paparToast('Pindahan direkod di kedua-dua lokasi'); }
+          else { await api('tambah', data); paparToast('Transaksi disimpan'); }
+          setEditId(null); setBorang(kosong()); await muatData();
+        } catch (err) {
+          const m = err.message.startsWith('BAKI_TIDAK_CUKUP') ? `Baki tidak mencukupi di server (baki: ${err.message.split(':')[1]}). Data mungkin telah berubah, sila segar semula.` : err.message;
+          paparMesej(m, 'Gagal disimpan');
+        } finally { setSimpan(false); }
+      };
+
+      const mulaEdit = (t) => {
+        setEditId(t.id);
+        setBorang({ tarikh: t.tarikh, lokasi: t.lokasi, jenis: t.jenis, item: t.item, kuantiti: t.kuantiti, siriKursus: t.siriKursus || '', jumlahPeserta: t.jumlahPeserta ?? '', rujukan: t.rujukan || '', catatan: t.catatan || '', penerima: '' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+      const padam = (t) => paparSahkan(
+        t.pasangan ? 'Rekod ini sebahagian daripada pindahan antara lokasi. Kedua-dua rekod (keluar & masuk) akan dipadam. Teruskan?' : `Padam rekod ${t.item} (${fmtNo(t.kuantiti)} unit, ${fmtTarikh(t.tarikh)})? Tindakan ini direkod dalam log audit.`,
+        async () => { setDialog(null); try { await api('padam', { id: t.id }); paparToast('Rekod dipadam'); await muatData(); } catch (e) { paparMesej(e.message, 'Gagal memadam'); } },
+        'Padam rekod', true);
+
+      const senarai = useMemo(() => {
+        const q = cari.trim().toLowerCase();
+        return dataLokasi.filter(t =>
+          (!tapisItem || t.item === tapisItem) && (!tapisJenis || t.jenis === tapisJenis) && (!tapisBulan || t.tarikh.startsWith(tapisBulan)) &&
+          (!q || [t.item, t.jenis, t.rujukan, t.siriKursus, t.catatan, t.direkodOleh, t.lokasi].join(' ').toLowerCase().includes(q)));
+      }, [dataLokasi, cari, tapisItem, tapisJenis, tapisBulan]);
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <Kad className="lg:col-span-4 h-fit lg:sticky lg:top-16"
+            title={<span className={`flex items-center gap-2 ${editId ? 'text-blue-700' : ''}`}>{editId ? <Edit className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}{editId ? 'Kemaskini Rekod' : 'Rekod Transaksi Baharu'}</span>}>
+            <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
+              <Medan label="Lokasi" nota={!bolehPilihLokasi && editId ? 'Hanya pentadbir sistem boleh pindah rekod ke lokasi lain.' : null}>
+                <select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={!bolehPilihLokasi || simpan}>
+                  {(bolehPilihLokasi ? senaraiLokasi : [borang.lokasi]).map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </Medan>
+              <Medan label="Tarikh" span={1}><input type="date" max={hariIni()} required className={inputCls} value={borang.tarikh} onChange={set('tarikh')} disabled={simpan} /></Medan>
+              <Medan label="Kuantiti" span={1}><input type="number" min="1" step="1" required className={`${inputCls} tabular ${melebihi ? 'border-red-400 ring-1 ring-red-200' : ''}`} value={borang.kuantiti} onChange={set('kuantiti')} disabled={simpan} /></Medan>
+              <Medan label="Item"><select className={inputCls} value={borang.item} onChange={set('item')} disabled={simpan}>{items.map(i => <option key={i} value={i}>{i}</option>)}</select></Medan>
+              <Medan label="Jenis transaksi">
+                <select className={inputCls} value={borang.jenis} onChange={set('jenis')} disabled={simpan || !!rekodEdit?.pasangan}>{JENIS_TRANSAKSI.map(j => <option key={j} value={j}>{j}</option>)}</select>
+              </Medan>
+
+              <div className="col-span-2 -mt-1 text-[11px] flex items-center justify-between rounded-md bg-slate-50 ring-1 ring-slate-200 px-3 py-1.5">
+                <span className="text-slate-500">Baki {borang.item} di lokasi ini</span>
+                <span className={`font-semibold tabular ${melebihi ? 'text-red-700' : 'text-slate-800'}`}>{fmtNo(bakiSemasa)}{borang.kuantiti && ` → ${fmtNo(bakiSemasa + (keluar ? -1 : 1) * Number(borang.kuantiti))}`}</span>
+              </div>
+
+              {!editId && borang.jenis === 'Pindahan Keluar' && (
+                <Medan label="Pindahan ke lokasi" nota="Pilih lokasi penerima supaya rekod 'Pindahan Masuk' dicipta automatik di sana.">
+                  <select className={inputCls} value={borang.penerima} onChange={set('penerima')}>
+                    <option value="">Tiada (keluar ke pihak luar)</option>
+                    {senaraiLokasi.filter(l => l !== borang.lokasi).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </Medan>
+              )}
+              {rekodEdit?.pasangan && <div className="col-span-2 text-[11px] text-blue-800 bg-blue-50 ring-1 ring-blue-100 rounded-md px-3 py-2">Rekod pindahan berpasangan. Perubahan tarikh, item, kuantiti dan rujukan akan dikemaskini pada kedua-dua lokasi.</div>}
+
+              {borang.jenis === 'Pengeluaran Kursus' && (<>
+                <Medan label="Siri kursus" span={1}><input type="text" placeholder="Siri 1/2026" className={inputCls} value={borang.siriKursus} onChange={set('siriKursus')} disabled={simpan} /></Medan>
+                <Medan label="Jumlah peserta" span={1}><input type="number" min="0" className={inputCls} value={borang.jumlahPeserta} onChange={set('jumlahPeserta')} disabled={simpan} /></Medan>
+              </>)}
+              <Medan label="No. DO / Rujukan"><input type="text" className={inputCls} value={borang.rujukan} onChange={set('rujukan')} disabled={simpan} /></Medan>
+              <Medan label="Catatan"><textarea rows="2" className={`${inputCls} resize-none`} value={borang.catatan} onChange={set('catatan')} disabled={simpan} /></Medan>
+
+              <div className="col-span-2 flex gap-2 pt-1">
+                <button type="submit" disabled={simpan} className={`flex-1 py-2.5 rounded-lg text-white text-sm font-semibold flex justify-center items-center gap-2 ${editId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-brand-700 hover:bg-brand-800'} disabled:opacity-70`}>
+                  {simpan && <Loader2 className="w-4 h-4 animate-spin" />}{editId ? 'Simpan Perubahan' : 'Simpan Transaksi'}
+                </button>
+                {editId && <button type="button" onClick={() => { setEditId(null); setBorang(kosong()); }} className="px-4 rounded-lg text-sm font-semibold bg-slate-100 hover:bg-slate-200">Batal</button>}
+              </div>
+            </form>
+          </Kad>
+
+          <Kad className="lg:col-span-8" title={`Senarai Transaksi (${fmtNo(senarai.length)})`}>
+            <div className="p-3 border-b border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="relative col-span-2 md:col-span-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari…" value={cari} onChange={e => setCari(e.target.value)} />
+              </div>
+              <select className={`${inputCls} py-1.5`} value={tapisItem} onChange={e => setTapisItem(e.target.value)}><option value="">Semua item</option>{items.map(i => <option key={i}>{i}</option>)}</select>
+              <select className={`${inputCls} py-1.5`} value={tapisJenis} onChange={e => setTapisJenis(e.target.value)}><option value="">Semua jenis</option>{JENIS_TRANSAKSI.map(j => <option key={j}>{j}</option>)}</select>
+              <input type="month" className={`${inputCls} py-1.5`} value={tapisBulan} onChange={e => setTapisBulan(e.target.value)} />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm md:min-w-[640px]">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                  <tr><th className="text-left font-semibold px-4 py-2.5">Tarikh</th>{lokasiPilihan === 'SEMUA' && <th className="text-left font-semibold px-3 py-2.5">Lokasi</th>}<th className="text-left font-semibold px-3 py-2.5">Item & butiran</th><th className="text-right font-semibold px-3 py-2.5">Kuantiti</th><th className="text-center font-semibold px-3 py-2.5 w-24">Tindakan</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {senarai.slice(0, had).map(t => {
+                    const masuk = isMasuk(t); const ubah = bolehUbah(t);
+                    return (
+                      <tr key={t.id || `${t.tarikh}-${t.item}-${t.kuantiti}`} className={`align-top hover:bg-slate-50 ${editId === t.id ? 'bg-blue-50' : ''}`}>
+                        <td className="px-4 py-2.5 whitespace-nowrap tabular text-slate-700">{fmtTarikh(t.tarikh)}</td>
+                        {lokasiPilihan === 'SEMUA' && <td className="px-3 py-2.5 text-xs text-slate-600 max-w-[140px]">{t.lokasi}</td>}
+                        <td className="px-3 py-2.5">
+                          <div className="font-semibold text-slate-800">{t.item}</div>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <Lencana cls={masuk ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{t.jenis}</Lencana>
+                            {t.pasangan && <Lencana cls="bg-blue-50 text-blue-700 ring-blue-200">Berpasangan</Lencana>}
+                            {t.rujukan && <span className="text-[11px] text-slate-500">Ruj: {t.rujukan}</span>}
+                            {t.siriKursus && <span className="text-[11px] text-slate-500">· {t.siriKursus}{t.jumlahPeserta !== '' && t.jumlahPeserta != null ? ` (${t.jumlahPeserta} peserta)` : ''}</span>}
+                          </div>
+                          {t.catatan && <div className="text-[11px] text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 mt-1 inline-block">{t.catatan}</div>}
+                          <div className="text-[11px] text-slate-400 mt-1">Oleh {t.direkodOleh || '—'}{t.dikemaskiniOleh && ` · dikemaskini ${t.dikemaskiniOleh}, ${t.dikemaskiniPada}`}</div>
+                        </td>
+                        <td className={`px-3 py-2.5 text-right tabular font-bold text-base whitespace-nowrap ${masuk ? 'text-emerald-700' : 'text-slate-800'}`}>{masuk ? '+' : '−'}{fmtNo(t.kuantiti)}</td>
+                        <td className="px-3 py-2.5">
+                          {ubah && t.id ? (
+                            <div className="flex justify-center gap-1.5">
+                              <button onClick={() => mulaEdit(t)} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => padam(t)} className="p-1.5 rounded-md text-red-700 hover:bg-red-50 ring-1 ring-red-200" title="Padam"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          ) : <div className="text-center text-slate-300" title="Hanya perekod asal atau pentadbir boleh ubah"><Lock className="w-3.5 h-3.5 mx-auto" /></div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {senarai.length === 0 && <tr><td colSpan="5" className="px-4 py-10 text-center text-sm text-slate-500">Tiada transaksi sepadan dengan tapisan.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {senarai.length > had && <div className="p-3 text-center border-t border-slate-100"><button onClick={() => setHad(h => h + 50)} className="text-sm font-medium text-brand-700 hover:underline">Papar 50 lagi ({fmtNo(senarai.length - had)} berbaki)</button></div>}
+          </Kad>
+        </div>
+      );
+    }
+
+    // ===================== LAPORAN =====================
+    function Laporan({ api, tetapan, dataLokasi, lokasiPilihan, pengguna, paparMesej, paparToast }) {
+      const [bulan, setBulan] = useState(bulanIni());
+      const [pengesah, setPengesah] = useState('');
+      const [bp, setBp] = useState(false);
+      const [proses, setProses] = useState(false);
+
+      const [y, m] = bulan.split('-').map(Number);
+      const dari = `${bulan}-01`;
+      const hingga = `${bulan}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      const semua = lokasiPilihan === 'SEMUA';
+      const data = useMemo(() => kiraRingkasan(dataLokasi, tetapan.items, { dari, hingga, abaiPindahanDalaman: semua }), [dataLokasi, tetapan, bulan, semua]);
+      const txBulan = dataLokasi.filter(t => t.tarikh >= dari && t.tarikh <= hingga);
+      const kursus = txBulan.filter(t => t.jenis === 'Pengeluaran Kursus');
+      const siriUnik = [...new Set(kursus.map(t => t.siriKursus).filter(Boolean))];
+      const jumlahPeserta = kursus.reduce((s, t) => s + (Number(t.jumlahPeserta) || 0), 0);
+
+      const pengesahInfo = (semua || lokasiPilihan === 'UPK BUUKI (HQ)')
+        ? { gelaran: 'Penolong Pengarah', jabatan: ['Bahagian Undang-Undang Keluarga Islam', 'Jabatan Hal Ehwal Agama Islam Pulau Pinang'] }
+        : { gelaran: 'Pegawai Tadbir Agama', jabatan: [`Pejabat Agama Islam ${lokasiPilihan}`] };
+      const pejabatPenyedia = (semua || lokasiPilihan === 'UPK BUUKI (HQ)') ? 'UPK BUUKI, JHEAIPP' : `Pejabat Agama Islam ${lokasiPilihan}`;
+      const namaFail = `${semua ? 'KESELURUHAN' : lokasiPilihan} - Laporan Stok ${bulan}.pdf`;
+      const dijana = new Date();
+
+      const muatTurun = async () => {
+        if (!window.html2pdf) return paparMesej('Modul PDF belum siap dimuatkan. Cuba lagi sebentar.');
+        setProses(true);
+        try {
+          const worker = window.html2pdf().set({ margin: [0.4, 0.5], filename: namaFail, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } }).from(document.getElementById('laporan-cetak'));
+          const uri = await worker.output('datauristring');
+          await worker.save();
+          await api('upload_pdf', { filename: namaFail, fileData: uri.split(',')[1] });
+          paparToast('PDF dimuat turun dan disimpan ke arkib Drive');
+        } catch (e) { paparMesej(`PDF dimuat turun, tetapi salinan ke Drive gagal: ${e.message}`, 'Arkib gagal'); }
+        finally { setProses(false); }
+      };
+
+      const th = "border border-slate-700 px-2 py-1.5 font-semibold";
+      const td = "border border-slate-700 px-2 py-1.5";
+      return (
+        <div className="max-w-4xl mx-auto space-y-4">
+          <Kad className="no-print">
+            <div className="p-4 grid md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+              <Medan label="Bulan laporan"><input type="month" max={bulanIni()} value={bulan} onChange={e => setBulan(e.target.value)} className={inputCls} /></Medan>
+              <Medan label="Nama pegawai pengesah">
+                <div className="flex gap-2">
+                  <input type="text" value={pengesah} onChange={e => setPengesah(e.target.value.toUpperCase())} placeholder="Pilihan" className={inputCls} />
+                  <label className="flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 rounded-lg ring-1 ring-slate-300 cursor-pointer"><input type="checkbox" checked={bp} onChange={e => setBp(e.target.checked)} /> b.p.</label>
+                </div>
+              </Medan>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="py-2 px-3 rounded-lg text-sm font-semibold ring-1 ring-slate-300 hover:bg-slate-50 flex items-center gap-1.5"><Printer className="w-4 h-4" />Cetak</button>
+                <button onClick={muatTurun} disabled={proses} className="py-2 px-3 rounded-lg text-sm font-semibold text-white bg-brand-700 hover:bg-brand-800 flex items-center gap-1.5 disabled:opacity-70">
+                  {proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}PDF + Arkib Drive
+                </button>
+              </div>
+            </div>
+          </Kad>
+
+          <div id="laporan-cetak" className="bg-white p-8 md:p-10 border border-slate-300 shadow-sm text-slate-900">
+            <div className="flex justify-between text-xs mb-4">
+              <span>Lampiran Laporan Stok</span>
+              <span className="font-semibold">No. Fail: {tetapan.noFail || '.......................................'}</span>
+            </div>
+            <div className="flex flex-col items-center text-center mb-6">
+              <img src="https://i.postimg.cc/cCxL0BL6/LOGO_PULAU_PINANG.png" alt="Logo Pulau Pinang" className="h-20 mb-3" crossOrigin="anonymous" />
+              <div className="text-xs font-semibold uppercase tracking-wide">Jabatan Hal Ehwal Agama Islam Pulau Pinang</div>
+              <h1 className="text-base font-bold uppercase mt-1">Laporan Bulanan Stok Kursus Praperkahwinan Islam</h1>
+              <div className="w-24 border-t-2 border-slate-900 my-2" />
+            </div>
+            <table className="text-sm mb-5"><tbody>
+              <tr><td className="pr-3 py-0.5 font-semibold">Pusat / Daerah</td><td className="pr-2">:</td><td className="uppercase">{semua ? 'Keseluruhan (semua pusat & daerah)' : lokasiPilihan}</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Tempoh</td><td className="pr-2">:</td><td>{fmtTarikh(dari)} hingga {fmtTarikh(hingga)} ({fmtBulan(bulan)})</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Bil. transaksi</td><td className="pr-2">:</td><td>{fmtNo(txBulan.length)}</td></tr>
+            </tbody></table>
+
+            <table className="w-full border-collapse text-sm mb-2">
+              <thead><tr className="bg-slate-100"><th className={`${th} w-10`}>Bil.</th><th className={`${th} text-left`}>Nama Item</th><th className={`${th} text-right`}>Baki Awal</th><th className={`${th} text-right`}>Masuk</th><th className={`${th} text-right`}>Keluar</th><th className={`${th} text-right`}>Baki Akhir</th></tr></thead>
+              <tbody>
+                {tetapan.items.map((i, k) => { const d = data[i.nama]; return (
+                  <tr key={i.nama}><td className={`${td} text-center`}>{k + 1}</td><td className={td}>{i.nama}</td><td className={`${td} text-right tabular`}>{fmtNo(d.awal)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.masuk)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.keluar)}</td><td className={`${td} text-right tabular font-bold bg-slate-50`}>{fmtNo(d.akhir)}</td></tr>
+                ); })}
+              </tbody>
+            </table>
+            <p className="text-[11px] text-slate-600 mb-5">Baki Akhir = Baki Awal + Masuk − Keluar. {semua && 'Pindahan antara lokasi tidak dikira sebagai masuk/keluar di peringkat keseluruhan.'}</p>
+
+            {kursus.length > 0 && (
+              <div className="text-sm mb-6"><span className="font-semibold">Pengeluaran kursus:</span> {fmtNo(siriUnik.length)} siri{siriUnik.length ? ` (${siriUnik.join(', ')})` : ''}, {fmtNo(jumlahPeserta)} peserta direkodkan.</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-10 text-sm mt-12">
+              <div>
+                <p className="mb-16">Disediakan oleh:</p>
+                <div className="border-t border-slate-900 pt-2 text-xs uppercase">
+                  <div className="font-bold">{pengguna.nama}</div>
+                  <div>{pejabatPenyedia}</div>
+                  <div className="normal-case mt-1">Tarikh: ...............................</div>
+                </div>
+              </div>
+              <div>
+                <p className="mb-16">Disemak & disahkan oleh:</p>
+                <div className="border-t border-slate-900 pt-2 text-xs uppercase">
+                  {pengesah && <div className="font-bold">{pengesah}</div>}
+                  <div className="font-bold">{bp ? 'b.p. ' : ''}{pengesahInfo.gelaran}</div>
+                  {pengesahInfo.jabatan.map(j => <div key={j}>{j}</div>)}
+                  <div className="normal-case mt-1">Tarikh: ...............................</div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-10 pt-2 border-t border-slate-200 text-[10px] text-slate-500 flex justify-between">
+              <span>Dijana oleh Sistem e-Stok JHEAIPP</span>
+              <span>{fmtTarikh(hariIni())} {dijana.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' })} · {pengguna.nama}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== LOG AUDIT (SUPERADMIN) =====================
+    function LogAudit({ api, paparMesej }) {
+      const [data, setData] = useState(null);
+      const [tapis, setTapis] = useState('');
+      useEffect(() => { api('audit').then(j => setData(j.data)).catch(e => { paparMesej(e.message); setData([]); }); }, []);
+      const warna = { TAMBAH: 'bg-emerald-50 text-emerald-800 ring-emerald-200', KEMASKINI: 'bg-blue-50 text-blue-800 ring-blue-200', PADAM: 'bg-red-50 text-red-800 ring-red-200', PINDAHAN: 'bg-indigo-50 text-indigo-800 ring-indigo-200', TETAPAN: 'bg-amber-50 text-amber-800 ring-amber-200' };
+      const ringkas = (s) => { try { const o = JSON.parse(s); if (o.keluar) return `${o.keluar.item} ${o.keluar.kuantiti} · ${o.keluar.lokasi} → ${o.masuk.lokasi}`; if (o.item) return `${fmtTarikh(o.tarikh)} · ${o.lokasi} · ${o.item} · ${o.jenis} · ${o.kuantiti}`; if (o.items) return `${o.items.length} item`; return ''; } catch (e) { return ''; } };
+      const senarai = (data || []).filter(d => !tapis || d.tindakan === tapis);
+      return (
+        <Kad title="Log Audit (300 aktiviti terakhir)" actions={
+          <select className={`${inputCls} py-1 text-xs w-auto`} value={tapis} onChange={e => setTapis(e.target.value)}>
+            <option value="">Semua tindakan</option>{['LOGIN', 'TAMBAH', 'PINDAHAN', 'KEMASKINI', 'PADAM', 'UPLOAD_PDF', 'TETAPAN'].map(t => <option key={t}>{t}</option>)}
+          </select>}>
+          {!data ? <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[760px]">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left px-4 py-2.5 font-semibold">Masa</th><th className="text-left px-3 py-2.5 font-semibold">Oleh</th><th className="text-left px-3 py-2.5 font-semibold">Tindakan</th><th className="text-left px-3 py-2.5 font-semibold">Sebelum</th><th className="text-left px-3 py-2.5 font-semibold">Selepas</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {senarai.map((d, k) => (
+                    <tr key={k} className="align-top hover:bg-slate-50">
+                      <td className="px-4 py-2 whitespace-nowrap tabular text-xs">{fmtTarikh(d.masa.slice(0, 10))} {d.masa.slice(11, 16)}</td>
+                      <td className="px-3 py-2 text-xs">{d.oleh}</td>
+                      <td className="px-3 py-2"><Lencana cls={warna[d.tindakan] || 'bg-slate-100 text-slate-700 ring-slate-200'}>{d.tindakan}</Lencana></td>
+                      <td className="px-3 py-2 text-xs text-slate-500">{ringkas(d.sebelum) || (d.tindakan === 'UPLOAD_PDF' ? d.rujukanId : '—')}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700">{ringkas(d.selepas) || '—'}</td>
+                    </tr>
+                  ))}
+                  {senarai.length === 0 && <tr><td colSpan="5" className="px-4 py-10 text-center text-slate-500">Tiada rekod.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Kad>
+      );
+    }
+
+    // ===================== TETAPAN (SUPERADMIN) =====================
+    function Tetapan({ api, tetapan, setTetapan, paparMesej, paparToast }) {
+      const [draf, setDraf] = useState(() => JSON.parse(JSON.stringify(tetapan)));
+      const [simpan, setSimpan] = useState(false);
+      const ubahItem = (k, medan, v) => setDraf(d => ({ ...d, items: d.items.map((i, x) => x === k ? { ...i, [medan]: v } : i) }));
+      const gerak = (k, arah) => setDraf(d => { const a = d.items.slice(); const j = k + arah; if (j < 0 || j >= a.length) return d; [a[k], a[j]] = [a[j], a[k]]; return { ...d, items: a }; });
+      const hantar = async () => {
+        setSimpan(true);
+        try { const j = await api('tetapan_simpan', { tetapan: draf }); setTetapan(j.tetapan); paparToast('Tetapan disimpan'); }
+        catch (e) { paparMesej(e.message, 'Gagal menyimpan'); } finally { setSimpan(false); }
+      };
+      return (
+        <div className="max-w-3xl space-y-5">
+          <Kad title="Senarai Item & Paras Stok Minimum" actions={<button onClick={() => setDraf(d => ({ ...d, items: [...d.items, { nama: '', stokMin: 0 }] }))} className="text-xs font-semibold text-brand-700 flex items-center gap-1"><PlusCircle className="w-3.5 h-3.5" />Tambah item</button>}>
+            <div className="p-4 space-y-2">
+              {draf.items.map((i, k) => (
+                <div key={k} className="flex items-center gap-2">
+                  <div className="flex flex-col"><button onClick={() => gerak(k, -1)} className="text-slate-400 hover:text-slate-700 text-xs leading-none">▲</button><button onClick={() => gerak(k, 1)} className="text-slate-400 hover:text-slate-700 text-xs leading-none">▼</button></div>
+                  <input className={inputCls} value={i.nama} onChange={e => ubahItem(k, 'nama', e.target.value)} placeholder="Nama item" />
+                  <input type="number" min="0" className={`${inputCls} w-28 tabular`} value={i.stokMin} onChange={e => ubahItem(k, 'stokMin', e.target.value)} title="Paras minimum" />
+                  <button onClick={() => setDraf(d => ({ ...d, items: d.items.filter((_, x) => x !== k) }))} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <p className="text-[11px] text-slate-500 pt-1">Kolum kanan ialah paras minimum per lokasi; baki pada atau di bawah paras ini ditanda "Rendah". Menukar nama item tidak mengubah rekod lama, jadi elak menamakan semula item yang sudah ada transaksi.</p>
+            </div>
+          </Kad>
+          <Kad title="Laporan">
+            <div className="p-4"><Medan label="No. Fail rasmi (dipapar pada laporan)"><input className={inputCls} value={draf.noFail} onChange={e => setDraf(d => ({ ...d, noFail: e.target.value }))} placeholder="Cth: JHEAIPP/BUUKI/100-1/2" /></Medan></div>
+          </Kad>
+          <div className="flex justify-end"><button onClick={hantar} disabled={simpan} className="py-2.5 px-5 rounded-lg text-sm font-semibold text-white bg-brand-700 hover:bg-brand-800 flex items-center gap-2 disabled:opacity-70">{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan Tetapan</button></div>
+        </div>
+      );
+    }
+
+    // ===================== DIALOG =====================
+    function Dialog({ tajuk, mesej, onYa, bahaya, onTutup }) {
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4 no-print" onClick={onTutup}>
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <AlertCircle className={`w-5 h-5 ${bahaya ? 'text-red-600' : onYa ? 'text-amber-500' : 'text-brand-600'}`} />
+              <h3 className="text-base font-bold text-slate-900">{tajuk}</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-6 leading-relaxed">{mesej}</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={onTutup} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium">{onYa ? 'Batal' : 'Tutup'}</button>
+              {onYa && <button onClick={onYa} className={`px-4 py-2 text-white rounded-lg text-sm font-medium ${bahaya ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-700 hover:bg-brand-800'}`}>Ya, teruskan</button>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
