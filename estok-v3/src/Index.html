@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>e-Stok JHEAIPP V3</title>
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      colors: { brand: { 50: '#eef7f2', 100: '#d5ebdf', 600: '#1f6b4a', 700: '#185a3d', 800: '#124632', 900: '#0c3324' }, emas: { 100: '#f6efd9', 500: '#b8912f' } }
+    } } };
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script>window.react = window.React; /* lucide-react UMD mencari global "react" */</script>
+  <script src="https://unpkg.com/lucide-react@0.294.0/dist/umd/lucide-react.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <style>
+    body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    @media print { body { background: #fff !important; } .no-print { display: none !important; } #laporan-cetak { border: 0 !important; box-shadow: none !important; padding: 0 !important; } }
+    ::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-slate-100">
+  <div id="root"><div style="padding:48px;text-align:center;font-family:sans-serif;color:#475569">Memuatkan e-Stok JHEAIPP…</div></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useEffect, useCallback } = React;
+    const {
+      Package, ArrowRightLeft, FileText, PlusCircle, MapPin, LayoutDashboard, Search, RefreshCw, Loader2, Ban,
+      AlertCircle, Download, ShieldCheck, History, AlertTriangle, TrendingUp, TrendingDown, Boxes, CheckCircle2,
+      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye
+    } = LucideReact;
+
+    // ===================== SAMBUNGAN SERVER =====================
+    function api(action, payload = {}) {
+      return new Promise((resolve, reject) => {
+        if (!window.google || !google.script || !google.script.run) {
+          return reject(Object.assign(new Error('Sistem mesti dibuka melalui pautan Web App rasmi e-Stok.'), { kod: 'BUKAN_WEBAPP' }));
+        }
+        google.script.run
+          .withSuccessHandler(s => {
+            let r; try { r = JSON.parse(s); } catch (e) { return reject(new Error('Respons server tidak sah.')); }
+            r.ok ? resolve(r.data) : reject(Object.assign(new Error(r.mesej), { kod: r.kod }));
+          })
+          .withFailureHandler(e => reject(Object.assign(new Error((e && e.message) || 'Sambungan ke server gagal. Semak internet anda.'), { kod: 'RANGKAIAN' })))
+          .api(JSON.stringify({ action, payload }));
+      });
+    }
+
+    // ===================== UTILITI =====================
+    const JENIS_TRANSAKSI = ['Terima Pembekal', 'Pindahan Masuk', 'Pindahan Keluar', 'Pengeluaran Kursus', 'Pelarasan (+)', 'Pelarasan (-)', 'Cabutan Sijil'];
+    const JENIS_MASUK = ['Terima Pembekal', 'Pindahan Masuk', 'Pelarasan (+)'];
+    const BULAN = ['JANUARI', 'FEBRUARI', 'MAC', 'APRIL', 'MEI', 'JUN', 'JULAI', 'OGOS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DISEMBER'];
+    const hariIniLokal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const fmtTarikh = (iso) => { if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso || ''; const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+    const fmtMasa = (s) => s ? `${fmtTarikh(s.slice(0, 10))} ${s.slice(11, 16)}` : '';
+    const fmtBulan = (ym) => { if (!ym) return ''; const [y, m] = ym.split('-'); return `${BULAN[parseInt(m, 10) - 1]} ${y}`; };
+    const fmtNo = (n) => Number(n || 0).toLocaleString('ms-MY');
+    const isMasuk = (t) => t.arah === 'Masuk';
+    const aktif = (t) => t.status === 'AKTIF';
+
+    function kiraRingkasan(senarai, items, { dari = null, hingga = null, abaiPindahanDalaman = false } = {}) {
+      const r = {};
+      items.forEach(i => { r[i.nama] = { awal: 0, masuk: 0, keluar: 0, akhir: 0 }; });
+      senarai.forEach(t => {
+        const x = r[t.item]; if (!x || !aktif(t)) return;
+        if (hingga && t.tarikh > hingga) return;
+        const q = Number(t.kuantiti) || 0, tanda = isMasuk(t) ? q : -q;
+        if (dari && t.tarikh < dari) { x.awal += tanda; x.akhir += tanda; return; }
+        x.akhir += tanda;
+        if (abaiPindahanDalaman && t.pasangan) return;
+        if (tanda > 0) x.masuk += q; else x.keluar += q;
+      });
+      return r;
+    }
+    const statusStok = (baki, min) => {
+      if (baki < 0) return { label: 'Negatif', cls: 'bg-red-100 text-red-800 ring-red-200' };
+      if (baki === 0 && !min) return { label: 'Tiada stok', cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
+      if (baki === 0) return { label: 'Habis', cls: 'bg-red-50 text-red-700 ring-red-200' };
+      if (min > 0 && baki <= min) return { label: 'Rendah', cls: 'bg-amber-50 text-amber-800 ring-amber-200' };
+      return { label: 'Mencukupi', cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200' };
+    };
+
+    // ===================== KOMPONEN ASAS =====================
+    const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 disabled:bg-slate-50 disabled:text-slate-500';
+    const Lencana = ({ children, cls }) => <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ring-1 ring-inset whitespace-nowrap ${cls}`}>{children}</span>;
+    const Kad = ({ title, children, actions, className = '' }) => (
+      <section className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>
+        {(title || actions) && <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200"><h2 className="text-sm font-semibold text-slate-800">{title}</h2><div className="flex items-center gap-2">{actions}</div></div>}
+        {children}
+      </section>
+    );
+    const KadKPI = ({ label, nilai, sub, Icon, tona = 'slate' }) => (
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-start gap-3">
+        <div className={`p-2 rounded-lg ${{ slate: 'bg-slate-100 text-slate-700', hijau: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-700' }[tona]}`}><Icon className="w-5 h-5" /></div>
+        <div className="min-w-0"><div className="text-xs font-medium text-slate-500">{label}</div><div className="text-2xl font-bold text-slate-900 tabular leading-tight">{nilai}</div>{sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}</div>
+      </div>
+    );
+    const Medan = ({ label, children, span = 2, nota }) => (
+      <div className={span === 2 ? 'col-span-2' : ''}><label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>{children}{nota && <p className="text-[11px] text-slate-500 mt-1">{nota}</p>}</div>
+    );
+    const Butang = ({ children, varian = 'utama', className = '', ...p }) => {
+      const v = { utama: 'bg-brand-700 hover:bg-brand-800 text-white', biru: 'bg-blue-600 hover:bg-blue-700 text-white', garis: 'ring-1 ring-slate-300 hover:bg-slate-50 text-slate-800', lembut: 'bg-slate-100 hover:bg-slate-200 text-slate-800', bahaya: 'bg-red-600 hover:bg-red-700 text-white' }[varian];
+      return <button {...p} className={`py-2 px-3.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60 ${v} ${className}`}>{children}</button>;
+    };
+
+    function Dialog({ tajuk, mesej, onYa, bahaya, input, labelYa, onTutup }) {
+      const [nilai, setNilai] = useState('');
+      const [proses, setProses] = useState(false);
+      const sah = !input || nilai.trim().length >= (input.min || 1);
+      const ya = async () => { setProses(true); try { await onYa(nilai.trim()); } finally { setProses(false); } };
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4 no-print" onClick={proses ? undefined : onTutup}>
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 mb-3"><AlertCircle className={`w-5 h-5 ${bahaya ? 'text-red-600' : onYa ? 'text-amber-500' : 'text-brand-600'}`} /><h3 className="text-base font-bold text-slate-900">{tajuk}</h3></div>
+            <p className="text-sm text-slate-600 mb-4 leading-relaxed whitespace-pre-line">{mesej}</p>
+            {input && <div className="mb-4"><label className="block text-xs font-semibold text-slate-600 mb-1">{input.label}</label><textarea rows="3" autoFocus className={`${inputCls} resize-none`} placeholder={input.placeholder} value={nilai} onChange={e => setNilai(e.target.value)} />{input.min && <p className="text-[11px] text-slate-500 mt-1">Sekurang-kurangnya {input.min} aksara.</p>}</div>}
+            <div className="flex justify-end gap-2">
+              <Butang varian="lembut" onClick={onTutup} disabled={proses}>{onYa ? 'Batal' : 'Tutup'}</Butang>
+              {onYa && <Butang varian={bahaya ? 'bahaya' : 'utama'} onClick={ya} disabled={!sah || proses}>{proses && <Loader2 className="w-4 h-4 animate-spin" />}{labelYa || 'Ya, teruskan'}</Butang>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== APP =====================
+    function App() {
+      const [boot, setBoot] = useState(null);       // { pengguna, kebenaran, tetapan, hariIni }
+      const [ralatBoot, setRalatBoot] = useState(null);
+      const [transaksi, setTransaksi] = useState([]);
+      const [dibacaPada, setDibacaPada] = useState('');
+      const [memuat, setMemuat] = useState(false);
+      const [tab, setTab] = useState('dashboard');
+      const [lokasiPilihan, setLokasiPilihan] = useState('SEMUA');
+      const [dialog, setDialog] = useState(null);
+      const [toast, setToast] = useState(null);
+
+      const paparToast = (mesej, jenis = 'ok') => { setToast({ mesej, jenis }); setTimeout(() => setToast(null), 4000); };
+      const paparMesej = (mesej, tajuk = 'Makluman') => setDialog({ tajuk, mesej });
+      const terimaData = (d) => { if (d && d.transaksi) { setTransaksi(d.transaksi.slice().sort((a, b) => (b.tarikh + b.diciptaPada).localeCompare(a.tarikh + a.diciptaPada))); setDibacaPada(d.dibacaPada); } if (d && d.mesej) paparToast(d.mesej); };
+
+      const muatData = useCallback(async () => {
+        setMemuat(true);
+        try { terimaData(await api('transaksi')); }
+        catch (e) { paparMesej(e.message, 'Gagal memuat data'); }
+        finally { setMemuat(false); }
+      }, []);
+
+      useEffect(() => {
+        api('bootstrap').then(b => {
+          setBoot(b);
+          setLokasiPilihan(b.kebenaran.lihatSemua ? 'SEMUA' : b.pengguna.lokasi);
+          muatData();
+        }).catch(e => setRalatBoot(e));
+      }, []);
+
+      const dataLokasi = useMemo(() => lokasiPilihan === 'SEMUA' ? transaksi : transaksi.filter(t => t.lokasi === lokasiPilihan), [transaksi, lokasiPilihan]);
+
+      if (ralatBoot) return <SkrinTiadaAkses ralat={ralatBoot} />;
+      if (!boot) return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Mengesahkan akaun…</div>;
+
+      const { pengguna, kebenaran, tetapan } = boot;
+      const tabs = [
+        { id: 'dashboard', label: 'Papan Pemuka', Icon: LayoutDashboard },
+        { id: 'transaksi', label: 'Transaksi', Icon: ArrowRightLeft },
+        { id: 'laporan', label: 'Laporan Bulanan', Icon: FileText },
+        ...(kebenaran.urusPengguna ? [{ id: 'pengguna', label: 'Pengguna', Icon: Users }] : []),
+        ...(kebenaran.audit ? [{ id: 'audit', label: 'Jejak Audit', Icon: History }] : [])
+      ];
+      const k = { pengguna, kebenaran, tetapan, hariIni: boot.hariIni || hariIniLokal(), transaksi, dataLokasi, lokasiPilihan, muatData, terimaData, paparMesej, paparToast, setDialog };
+
+      return (
+        <div className="min-h-screen text-slate-800">
+          <header className="bg-brand-900 text-white no-print">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2 rounded-lg"><Package className="h-6 w-6 text-emas-100" /></div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-brand-100/80">JHEAIPP · Unit Pembangunan Keluarga</div>
+                  <h1 className="text-lg font-bold leading-tight">e-Stok V3 <span className="font-normal text-brand-100/80 hidden sm:inline">· Pengurusan Inventori Bersepadu UPK & PAD</span></h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col items-start md:items-end mr-1 min-w-0">
+                  <span className="text-sm font-medium leading-tight truncate max-w-[260px]">{pengguna.nama}</span>
+                  <span className="text-[11px] text-emas-100 flex items-center gap-1">{pengguna.peranan === 'ADMIN_UPK' && <ShieldCheck className="w-3 h-3" />}{pengguna.labelPeranan} · {pengguna.emel}</span>
+                </div>
+                <div className="flex items-center rounded-lg bg-white/10 ring-1 ring-white/15 px-2.5 py-1.5 ml-auto md:ml-0">
+                  <MapPin className="h-4 w-4 mr-1.5 text-emas-100 flex-shrink-0" />
+                  <select className="bg-transparent text-white text-sm font-medium focus:outline-none max-w-[210px] disabled:opacity-90" value={lokasiPilihan} onChange={e => setLokasiPilihan(e.target.value)} disabled={!kebenaran.lihatSemua}>
+                    {kebenaran.lihatSemua && <option value="SEMUA" className="text-slate-900">Semua Lokasi</option>}
+                    {kebenaran.lokasiDilihat.map(l => <option key={l} value={l} className="text-slate-900">{l}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <nav className="bg-white border-b border-slate-200 no-print sticky top-0 z-30">
+            <div className="max-w-7xl mx-auto px-2 flex items-center justify-between overflow-x-auto">
+              <div className="flex">{tabs.map(({ id, label, Icon }) => (
+                <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}><Icon className="w-4 h-4" />{label}</button>
+              ))}</div>
+              <div className="flex items-center gap-3 pl-3">
+                {dibacaPada && <span className="hidden md:inline text-[11px] text-slate-500 whitespace-nowrap">Data setakat {dibacaPada.slice(11, 16)}</span>}
+                <button onClick={muatData} disabled={memuat} className="flex items-center gap-1.5 text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg ring-1 ring-brand-100 whitespace-nowrap"><RefreshCw className={`w-3.5 h-3.5 ${memuat ? 'animate-spin' : ''}`} />{memuat ? 'Menyelaras…' : 'Segar Semula'}</button>
+              </div>
+            </div>
+          </nav>
+
+          <main className="max-w-7xl mx-auto p-4 md:p-6">
+            {tab === 'dashboard' && <PapanPemuka {...k} />}
+            {tab === 'transaksi' && <Transaksi {...k} />}
+            {tab === 'laporan' && <Laporan {...k} />}
+            {tab === 'pengguna' && kebenaran.urusPengguna && <Pengguna {...k} />}
+            {tab === 'audit' && kebenaran.audit && <JejakAudit {...k} />}
+            <p className="text-center text-[11px] text-slate-400 mt-8 no-print">e-Stok JHEAIPP V{boot.versi} · Akses direkod untuk tujuan audit</p>
+          </main>
+
+          {dialog && <Dialog {...dialog} onTutup={() => setDialog(null)} />}
+          {toast && <div className={`fixed bottom-5 right-5 left-5 sm:left-auto z-[110] flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium no-print ${toast.jenis === 'ok' ? 'bg-brand-800 text-white' : 'bg-red-600 text-white'}`}>{toast.jenis === 'ok' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}{toast.mesej}</div>}
+        </div>
+      );
+    }
+
+    function SkrinTiadaAkses({ ralat }) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+          <div className="max-w-md w-full bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mb-4"><Lock className="w-6 h-6 text-amber-600" /></div>
+            <h1 className="text-lg font-bold text-slate-900 mb-2">Akses tidak dibenarkan</h1>
+            <p className="text-sm text-slate-600 leading-relaxed">{ralat.message}</p>
+            <p className="text-[11px] text-slate-400 mt-6">e-Stok JHEAIPP V3 · Kod: {ralat.kod || 'RALAT'}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== PAPAN PEMUKA =====================
+    function PapanPemuka({ tetapan, dataLokasi, transaksi, lokasiPilihan, kebenaran, hariIni }) {
+      const items = tetapan.items;
+      const semua = lokasiPilihan === 'SEMUA';
+      const dariBulan = hariIni.slice(0, 7) + '-01';
+      const baki = useMemo(() => kiraRingkasan(dataLokasi, items, { abaiPindahanDalaman: semua }), [dataLokasi, items, semua]);
+      const bulan = useMemo(() => kiraRingkasan(dataLokasi, items, { dari: dariBulan, abaiPindahanDalaman: semua }), [dataLokasi, items, semua]);
+      const lokasiDisemak = semua ? kebenaran.lokasiDilihat : [lokasiPilihan];
+      const matriks = useMemo(() => { const m = {}; lokasiDisemak.forEach(l => { m[l] = kiraRingkasan(transaksi.filter(t => t.lokasi === l), items); }); return m; }, [transaksi, items, lokasiPilihan]);
+      const amaran = [];
+      lokasiDisemak.forEach(l => items.forEach(i => { const b = matriks[l][i.nama].akhir; if (b < 0 || (i.stokMin > 0 && b <= i.stokMin)) amaran.push({ lokasi: l, item: i.nama, baki: b, min: i.stokMin }); }));
+      amaran.sort((a, b) => a.baki - b.baki);
+      const txBulan = dataLokasi.filter(t => aktif(t) && t.tarikh >= dariBulan);
+      const terkini = dataLokasi.slice(0, 6);
+      const jumlah = (k) => Object.values(bulan).reduce((s, x) => s + x[k], 0);
+
+      return (
+        <div className="space-y-5">
+          <div><h2 className="text-xl font-bold text-slate-900">{semua ? 'Keseluruhan Negeri' : lokasiPilihan}</h2><p className="text-sm text-slate-500">Baki semasa dan aktiviti {fmtBulan(hariIni.slice(0, 7)).toLowerCase().replace(/^\w/, c => c.toUpperCase())}</p></div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KadKPI label="Transaksi bulan ini" nilai={fmtNo(txBulan.length)} sub={`${fmtNo(dataLokasi.filter(aktif).length)} rekod aktif`} Icon={Boxes} />
+            <KadKPI label="Unit masuk bulan ini" nilai={fmtNo(jumlah('masuk'))} Icon={TrendingUp} tona="hijau" />
+            <KadKPI label="Unit keluar bulan ini" nilai={fmtNo(jumlah('keluar'))} Icon={TrendingDown} />
+            <KadKPI label="Amaran stok" nilai={fmtNo(amaran.length)} sub={amaran.length ? 'Rendah, habis atau negatif' : 'Tiada isu'} Icon={AlertTriangle} tona={amaran.length ? 'amber' : 'hijau'} />
+          </div>
+          <div className="grid lg:grid-cols-3 gap-5">
+            <Kad title="Baki Stok Semasa" className="lg:col-span-2">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-5 py-2.5">Item</th><th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">Masuk</th><th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">Keluar</th><th className="text-right font-semibold px-3 py-2.5">Baki</th><th className="text-left font-semibold px-4 py-2.5">Status</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{items.map(i => { const b = baki[i.nama], st = statusStok(b.akhir, semua ? 0 : i.stokMin); return (
+                  <tr key={i.nama} className="hover:bg-slate-50"><td className="px-5 py-2.5 font-medium">{i.nama}</td><td className="px-3 py-2.5 text-right tabular text-slate-600 hidden sm:table-cell">{fmtNo(b.masuk)}</td><td className="px-3 py-2.5 text-right tabular text-slate-600 hidden sm:table-cell">{fmtNo(b.keluar)}</td><td className={`px-3 py-2.5 text-right tabular font-bold text-base ${b.akhir < 0 ? 'text-red-700' : 'text-slate-900'}`}>{fmtNo(b.akhir)}</td><td className="px-4 py-2.5"><Lencana cls={st.cls}>{st.label}</Lencana></td></tr>
+                ); })}</tbody>
+              </table></div>
+              {semua && <p className="px-5 py-2.5 text-[11px] text-slate-500 border-t border-slate-100">Pindahan antara lokasi tidak dikira sebagai masuk/keluar di peringkat negeri kerana bersih sifar. Status amaran per lokasi dipaparkan di "Perlu Tindakan".</p>}
+            </Kad>
+            <Kad title="Perlu Tindakan">
+              {amaran.length === 0 ? <div className="p-6 text-center text-sm text-slate-500"><CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />Semua item melebihi paras minimum.</div> : (
+                <ul className="divide-y divide-slate-100 max-h-[440px] overflow-y-auto">{amaran.map((a, x) => { const st = statusStok(a.baki, a.min); return (
+                  <li key={x} className="px-5 py-2.5 flex items-center justify-between gap-3"><div className="min-w-0"><div className="text-sm font-medium truncate">{a.item}</div><div className="text-[11px] text-slate-500 truncate">{a.lokasi} · min {fmtNo(a.min)}</div></div><div className="text-right flex-shrink-0"><div className="text-sm font-bold tabular">{fmtNo(a.baki)}</div><Lencana cls={st.cls}>{st.label}</Lencana></div></li>
+                ); })}</ul>
+              )}
+            </Kad>
+          </div>
+          {semua && (
+            <Kad title="Perbandingan Baki Antara Lokasi">
+              <div className="overflow-x-auto"><table className="w-full text-sm min-w-[900px]">
+                <thead className="bg-slate-50 text-slate-500 text-xs"><tr><th className="text-left font-semibold px-5 py-2.5 sticky left-0 bg-slate-50">Item</th>{lokasiDisemak.map(l => <th key={l} className="text-right font-semibold px-3 py-2.5">{l.replace('Daerah ', '')}</th>)}</tr></thead>
+                <tbody className="divide-y divide-slate-100">{items.map(i => (
+                  <tr key={i.nama} className="hover:bg-slate-50"><td className="px-5 py-2 font-medium sticky left-0 bg-white">{i.nama}</td>{lokasiDisemak.map(l => { const b = matriks[l][i.nama].akhir; return <td key={l} className={`px-3 py-2 text-right tabular ${b < 0 ? 'text-red-700 font-bold' : (i.stokMin > 0 && b <= i.stokMin ? 'text-amber-700 font-semibold' : 'text-slate-700')}`}>{fmtNo(b)}</td>; })}</tr>
+                ))}</tbody>
+              </table></div>
+            </Kad>
+          )}
+          <Kad title="Transaksi Terkini">
+            <ul className="divide-y divide-slate-100">{terkini.map(t => (
+              <li key={t.id} className="px-5 py-2.5 flex items-center justify-between gap-3 text-sm"><div className="min-w-0"><div className={`font-medium truncate ${aktif(t) ? '' : 'line-through text-slate-400'}`}>{t.item} · {t.jenis}</div><div className="text-[11px] text-slate-500 truncate">{fmtTarikh(t.tarikh)} · {t.lokasi} · {t.direkodOleh || '—'}</div></div><div className={`tabular font-bold ${!aktif(t) ? 'text-slate-400' : isMasuk(t) ? 'text-emerald-700' : 'text-slate-800'}`}>{isMasuk(t) ? '+' : '−'}{fmtNo(t.kuantiti)}</div></li>
+            ))}{terkini.length === 0 && <li className="px-5 py-6 text-sm text-slate-500 text-center">Belum ada transaksi.</li>}</ul>
+          </Kad>
+        </div>
+      );
+    }
+
+    // ===================== TRANSAKSI =====================
+    function Transaksi({ pengguna, kebenaran, tetapan, hariIni, transaksi, dataLokasi, lokasiPilihan, terimaData, paparMesej, setDialog }) {
+      const items = tetapan.items.map(i => i.nama);
+      const lokasiTulis = kebenaran.lokasiDitulis;
+      const bolehTulis = lokasiTulis.length > 0;
+      const isAdmin = pengguna.peranan === 'ADMIN_UPK';
+      const lokasiLalai = () => lokasiTulis.includes(lokasiPilihan) ? lokasiPilihan : lokasiTulis[0];
+      const kosong = () => ({ tarikh: hariIni, lokasi: lokasiLalai(), jenis: JENIS_TRANSAKSI[0], item: items[0] || '', kuantiti: '', siriKursus: '', jumlahPeserta: '', rujukan: '', catatan: '', lokasiPenerima: '', sebab: '' });
+      const [borang, setBorang] = useState(kosong);
+      const [editId, setEditId] = useState(null);
+      const [simpan, setSimpan] = useState(false);
+      const [cari, setCari] = useState(''); const [tItem, setTItem] = useState(''); const [tJenis, setTJenis] = useState(''); const [tBulan, setTBulan] = useState(''); const [papBatal, setPapBatal] = useState(false);
+      const [had, setHad] = useState(50);
+      useEffect(() => { if (!editId && lokasiTulis.includes(lokasiPilihan)) setBorang(b => ({ ...b, lokasi: lokasiPilihan })); }, [lokasiPilihan]);
+
+      const set = (k) => (e) => setBorang(b => ({ ...b, [k]: e.target.value }));
+      const rekodEdit = editId ? transaksi.find(t => t.id === editId) : null;
+      const berpasangan = !!(rekodEdit && rekodEdit.pasangan);
+      const lokasiKawalan = (t) => { if (!t.pasangan || t.arah === 'Keluar') return t.lokasi; const p = transaksi.find(x => x.id === t.pasangan); return p ? p.lokasi : null; };
+      const bolehUbah = (t) => aktif(t) && lokasiTulis.includes(lokasiKawalan(t));
+
+      const jenisBerkesan = berpasangan ? rekodEdit.jenis : borang.jenis;
+      const keluar = !JENIS_MASUK.includes(jenisBerkesan);
+      const bakiSemasa = useMemo(() => transaksi.filter(t => aktif(t) && t.lokasi === borang.lokasi && t.item === borang.item && t.id !== editId).reduce((s, t) => s + (isMasuk(t) ? t.kuantiti : -t.kuantiti), 0), [transaksi, borang.lokasi, borang.item, editId]);
+      const qty = Number(borang.kuantiti) || 0;
+      const bakiSelepas = bakiSemasa + (keluar ? -qty : qty);
+
+      const hantar = async (paksa = false) => {
+        if (!(Number.isInteger(qty) && qty > 0)) return paparMesej('Sila masukkan kuantiti nombor bulat lebih daripada 0.');
+        setSimpan(true);
+        try {
+          const p = { ...borang, kuantiti: qty, paksa };
+          let d;
+          if (editId) d = await api('kemaskini', { ...p, id: editId });
+          else if (borang.jenis === 'Pindahan Keluar' && borang.lokasiPenerima) d = await api('pindahan', p);
+          else d = await api('tambah', p);
+          terimaData(d); setEditId(null); setBorang(kosong());
+        } catch (e) {
+          if (e.kod === 'BAKI_TIDAK_CUKUP' && kebenaran.paksaBaki && !paksa) {
+            setDialog({ tajuk: 'Baki tidak mencukupi', bahaya: true, labelYa: 'Paksa simpan', mesej: `${e.message}\n\nSebagai Admin UPK, anda boleh paksa simpan. Tindakan ini akan ditanda "DIPAKSA" dalam jejak audit.`, onYa: async () => { setDialog(null); await hantar(true); } });
+          } else paparMesej(e.message, 'Tidak disimpan');
+        } finally { setSimpan(false); }
+      };
+
+      const mulaEdit = (t) => { setEditId(t.id); setBorang({ tarikh: t.tarikh, lokasi: t.lokasi, jenis: t.jenis, item: t.item, kuantiti: t.kuantiti, siriKursus: t.siriKursus || '', jumlahPeserta: t.jumlahPeserta ?? '', rujukan: t.rujukan || '', catatan: t.catatan || '', lokasiPenerima: '', sebab: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+      const batal = (t, paksa = false) => setDialog({
+        tajuk: 'Batalkan rekod', bahaya: true, labelYa: 'Batalkan rekod',
+        mesej: `${t.item} · ${fmtNo(t.kuantiti)} unit · ${fmtTarikh(t.tarikh)} · ${t.lokasi}${t.pasangan ? '\n\nIni rekod pindahan. Kedua-dua rekod (keluar & masuk) akan dibatalkan.' : ''}\n\nRekod tidak dipadam. Ia ditanda BATAL dan tidak lagi dikira dalam baki.`,
+        input: { label: 'Sebab pembatalan', placeholder: 'Cth: Salah masukkan kuantiti, rekod berganda…', min: 5 },
+        onYa: async (sebab) => {
+          try { terimaData(await api('batal', { id: t.id, sebab, paksa })); setDialog(null); if (editId === t.id) { setEditId(null); setBorang(kosong()); } }
+          catch (e) {
+            if (e.kod === 'BAKI_TIDAK_CUKUP' && kebenaran.paksaBaki && !paksa) setDialog({ tajuk: 'Pembatalan menjejaskan baki', bahaya: true, labelYa: 'Paksa batal', mesej: e.message + '\n\nStok ini sudah digunakan. Paksa batal sebagai Admin UPK?', onYa: async () => { try { terimaData(await api('batal', { id: t.id, sebab, paksa: true })); setDialog(null); } catch (e2) { paparMesej(e2.message, 'Gagal'); } } });
+            else paparMesej(e.message, 'Gagal dibatalkan');
+          }
+        }
+      });
+
+      const senarai = useMemo(() => {
+        const q = cari.trim().toLowerCase();
+        return dataLokasi.filter(t => (papBatal || aktif(t)) && (!tItem || t.item === tItem) && (!tJenis || t.jenis === tJenis) && (!tBulan || t.tarikh.startsWith(tBulan)) &&
+          (!q || [t.id, t.item, t.jenis, t.rujukan, t.siriKursus, t.catatan, t.direkodOleh, t.lokasi].join(' ').toLowerCase().includes(q)));
+      }, [dataLokasi, cari, tItem, tJenis, tBulan, papBatal]);
+      const bilBatal = dataLokasi.filter(t => !aktif(t)).length;
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {bolehTulis ? (
+          <Kad className="lg:col-span-4 h-fit lg:sticky lg:top-16" title={<span className={`flex items-center gap-2 ${editId ? 'text-blue-700' : ''}`}>{editId ? <Edit className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}{editId ? 'Kemaskini Rekod' : 'Rekod Transaksi Baharu'}</span>}>
+            <form onSubmit={e => { e.preventDefault(); hantar(); }} className="p-5 grid grid-cols-2 gap-3.5">
+              {editId && <div className="col-span-2 text-[11px] text-slate-500 -mb-1">ID: <span className="font-mono">{editId}</span></div>}
+              <Medan label="Lokasi" nota={editId && !isAdmin ? 'Lokasi rekod hanya boleh diubah oleh Admin UPK.' : null}>
+                <select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || (editId && (!isAdmin || berpasangan)) || lokasiTulis.length === 1}>{(editId && !lokasiTulis.includes(borang.lokasi) ? [borang.lokasi] : lokasiTulis).map(l => <option key={l} value={l}>{l}</option>)}</select>
+              </Medan>
+              <Medan label="Tarikh" span={1}><input type="date" max={hariIni} required className={inputCls} value={borang.tarikh} onChange={set('tarikh')} disabled={simpan} /></Medan>
+              <Medan label="Kuantiti" span={1}><input type="number" inputMode="numeric" min="1" step="1" required className={`${inputCls} tabular ${keluar && bakiSelepas < 0 ? 'border-red-400 ring-1 ring-red-200' : ''}`} value={borang.kuantiti} onChange={set('kuantiti')} disabled={simpan} /></Medan>
+              <Medan label="Item"><select className={inputCls} value={borang.item} onChange={set('item')} disabled={simpan}>{items.map(i => <option key={i}>{i}</option>)}</select></Medan>
+              <Medan label="Jenis transaksi"><select className={inputCls} value={jenisBerkesan} onChange={set('jenis')} disabled={simpan || berpasangan}>{JENIS_TRANSAKSI.map(j => <option key={j}>{j}</option>)}</select></Medan>
+              <div className="col-span-2 -mt-1 text-[11px] flex items-center justify-between rounded-md bg-slate-50 ring-1 ring-slate-200 px-3 py-1.5"><span className="text-slate-500">Baki {borang.item} di lokasi ini</span><span className={`font-semibold tabular ${bakiSelepas < 0 ? 'text-red-700' : 'text-slate-800'}`}>{fmtNo(bakiSemasa)}{qty > 0 && ` → ${fmtNo(bakiSelepas)}`}</span></div>
+              {!editId && borang.jenis === 'Pindahan Keluar' && (
+                <Medan label="Pindahan ke lokasi" nota="Pilih lokasi penerima supaya rekod Pindahan Masuk dicipta serentak di sana.">
+                  <select className={inputCls} value={borang.lokasiPenerima} onChange={set('lokasiPenerima')}><option value="">Tiada (keluar ke pihak luar)</option>{kebenaran.lokasiDilihat.concat(tetapan.lokasi.map(l => l.nama)).filter((l, i, a) => a.indexOf(l) === i && l !== borang.lokasi).map(l => <option key={l}>{l}</option>)}</select>
+                </Medan>
+              )}
+              {berpasangan && <div className="col-span-2 text-[11px] text-blue-800 bg-blue-50 ring-1 ring-blue-100 rounded-md px-3 py-2">Rekod pindahan berpasangan. Tarikh, item, kuantiti, rujukan dan catatan dikemaskini pada kedua-dua lokasi.</div>}
+              {jenisBerkesan === 'Pengeluaran Kursus' && (<>
+                <Medan label="Siri kursus" span={1}><input className={inputCls} placeholder="Siri 1/2026" value={borang.siriKursus} onChange={set('siriKursus')} disabled={simpan} /></Medan>
+                <Medan label="Jumlah peserta" span={1}><input type="number" inputMode="numeric" min="0" className={inputCls} value={borang.jumlahPeserta} onChange={set('jumlahPeserta')} disabled={simpan} /></Medan>
+              </>)}
+              <Medan label="No. DO / Rujukan"><input className={inputCls} value={borang.rujukan} onChange={set('rujukan')} disabled={simpan} /></Medan>
+              <Medan label="Catatan"><textarea rows="2" className={`${inputCls} resize-none`} value={borang.catatan} onChange={set('catatan')} disabled={simpan} /></Medan>
+              {editId && <Medan label="Sebab perubahan (direkod dalam audit)"><input className={inputCls} value={borang.sebab} onChange={set('sebab')} placeholder="Cth: Salah taip kuantiti" disabled={simpan} /></Medan>}
+              <div className="col-span-2 flex gap-2 pt-1">
+                <Butang type="submit" varian={editId ? 'biru' : 'utama'} className="flex-1 py-2.5" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}{editId ? 'Simpan Perubahan' : 'Simpan Transaksi'}</Butang>
+                {editId && <Butang type="button" varian="lembut" onClick={() => { setEditId(null); setBorang(kosong()); }}>Batal</Butang>}
+              </div>
+            </form>
+          </Kad>
+          ) : (
+            <Kad className="lg:col-span-4 h-fit"><div className="p-5 flex items-start gap-3 text-sm text-slate-600"><Eye className="w-5 h-5 text-slate-400 flex-shrink-0" /><div><div className="font-semibold text-slate-800">Akaun paparan sahaja</div>Peranan {pengguna.labelPeranan} boleh menyemak transaksi dan laporan, tetapi tidak merekod atau mengubah stok.</div></div></Kad>
+          )}
+
+          <Kad className="lg:col-span-8" title={`Senarai Transaksi (${fmtNo(senarai.length)})`} actions={bilBatal > 0 && <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={papBatal} onChange={e => setPapBatal(e.target.checked)} />Papar dibatal ({bilBatal})</label>}>
+            <div className="p-3 border-b border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="relative col-span-2 md:col-span-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari ID, rujukan, siri…" value={cari} onChange={e => setCari(e.target.value)} /></div>
+              <select className={`${inputCls} py-1.5`} value={tItem} onChange={e => setTItem(e.target.value)}><option value="">Semua item</option>{items.map(i => <option key={i}>{i}</option>)}</select>
+              <select className={`${inputCls} py-1.5`} value={tJenis} onChange={e => setTJenis(e.target.value)}><option value="">Semua jenis</option>{JENIS_TRANSAKSI.map(j => <option key={j}>{j}</option>)}</select>
+              <input type="month" className={`${inputCls} py-1.5`} value={tBulan} onChange={e => setTBulan(e.target.value)} />
+            </div>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-4 py-2.5">Tarikh</th>{lokasiPilihan === 'SEMUA' && <th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Lokasi</th>}<th className="text-left font-semibold px-3 py-2.5">Butiran</th><th className="text-right font-semibold px-3 py-2.5">Kuantiti</th>{bolehTulis && <th className="px-3 py-2.5 w-20"></th>}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {senarai.slice(0, had).map(t => { const ubah = bolehUbah(t); const batalTx = !aktif(t); return (
+                  <tr key={t.id} className={`align-top ${editId === t.id ? 'bg-blue-50' : batalTx ? 'bg-slate-50/70' : 'hover:bg-slate-50'}`}>
+                    <td className="px-4 py-2.5 whitespace-nowrap tabular text-slate-700">{fmtTarikh(t.tarikh)}</td>
+                    {lokasiPilihan === 'SEMUA' && <td className="px-3 py-2.5 text-xs text-slate-600 max-w-[150px] hidden md:table-cell">{t.lokasi}</td>}
+                    <td className="px-3 py-2.5">
+                      <div className={`font-semibold ${batalTx ? 'line-through text-slate-400' : 'text-slate-800'}`}>{t.item}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <Lencana cls={batalTx ? 'bg-slate-100 text-slate-500 ring-slate-200' : isMasuk(t) ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{t.jenis}</Lencana>
+                        {t.pasangan && <Lencana cls="bg-blue-50 text-blue-700 ring-blue-200">Pindahan</Lencana>}
+                        {batalTx && <Lencana cls="bg-red-50 text-red-700 ring-red-200">BATAL</Lencana>}
+                        {lokasiPilihan === 'SEMUA' && <span className="text-[11px] text-slate-500 md:hidden">{t.lokasi}</span>}
+                        {t.rujukan && <span className="text-[11px] text-slate-500">Ruj: {t.rujukan}</span>}
+                        {t.siriKursus && <span className="text-[11px] text-slate-500">{t.siriKursus}{t.jumlahPeserta !== '' && t.jumlahPeserta != null ? ` · ${t.jumlahPeserta} peserta` : ''}</span>}
+                      </div>
+                      {t.catatan && <div className="text-[11px] text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 mt-1 inline-block">{t.catatan}</div>}
+                      {batalTx && <div className="text-[11px] text-red-700 mt-1">Dibatal oleh {t.dibatalOleh} pada {fmtMasa(t.dibatalPada)}: {t.sebabBatal}</div>}
+                      <div className="text-[11px] text-slate-400 mt-1">{t.id} · {t.direkodOleh || '—'}{t.dikemaskiniOleh && ` · dikemaskini ${t.dikemaskiniOleh} ${fmtMasa(t.dikemaskiniPada)}`}</div>
+                    </td>
+                    <td className={`px-3 py-2.5 text-right tabular font-bold text-base whitespace-nowrap ${batalTx ? 'text-slate-400 line-through' : isMasuk(t) ? 'text-emerald-700' : 'text-slate-800'}`}>{isMasuk(t) ? '+' : '−'}{fmtNo(t.kuantiti)}</td>
+                    {bolehTulis && <td className="px-3 py-2.5">{ubah ? (
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => mulaEdit(t)} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => batal(t)} className="p-1.5 rounded-md text-red-700 hover:bg-red-50 ring-1 ring-red-200" title="Batalkan"><Ban className="w-3.5 h-3.5" /></button>
+                      </div>) : !batalTx && <div className="flex justify-end text-slate-300" title="Dikawal oleh lokasi lain"><Lock className="w-3.5 h-3.5" /></div>}
+                    </td>}
+                  </tr>
+                ); })}
+                {senarai.length === 0 && <tr><td colSpan="5" className="px-4 py-10 text-center text-sm text-slate-500">Tiada transaksi sepadan.</td></tr>}
+              </tbody>
+            </table></div>
+            {senarai.length > had && <div className="p-3 text-center border-t border-slate-100"><button onClick={() => setHad(h => h + 50)} className="text-sm font-medium text-brand-700 hover:underline">Papar 50 lagi ({fmtNo(senarai.length - had)} berbaki)</button></div>}
+          </Kad>
+        </div>
+      );
+    }
+
+    // ===================== LAPORAN =====================
+    function Laporan({ pengguna, tetapan, hariIni, dataLokasi, lokasiPilihan, paparMesej, paparToast }) {
+      const [bulan, setBulan] = useState(hariIni.slice(0, 7));
+      const [pengesah, setPengesah] = useState('');
+      const [bp, setBp] = useState(false);
+      const [proses, setProses] = useState(false);
+      const [arkib, setArkib] = useState(null);
+      const [y, m] = bulan.split('-').map(Number);
+      const dari = `${bulan}-01`, hingga = `${bulan}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      const semua = lokasiPilihan === 'SEMUA';
+      const hq = tetapan.lokasi[0] && tetapan.lokasi[0].nama;
+      const data = useMemo(() => kiraRingkasan(dataLokasi, tetapan.items, { dari, hingga, abaiPindahanDalaman: semua }), [dataLokasi, tetapan, bulan, semua]);
+      const txBulan = dataLokasi.filter(t => aktif(t) && t.tarikh >= dari && t.tarikh <= hingga);
+      const kursus = txBulan.filter(t => t.jenis === 'Pengeluaran Kursus');
+      const siri = [...new Set(kursus.map(t => t.siriKursus).filter(Boolean))];
+      const peserta = kursus.reduce((s, t) => s + (Number(t.jumlahPeserta) || 0), 0);
+      const peringkatUPK = semua || lokasiPilihan === hq;
+      const pengesahInfo = peringkatUPK ? { gelaran: 'Penolong Pengarah', jabatan: ['Bahagian Undang-Undang Keluarga Islam', 'Jabatan Hal Ehwal Agama Islam Pulau Pinang'] } : { gelaran: 'Pegawai Tadbir Agama', jabatan: [`Pejabat Agama Islam ${lokasiPilihan}`] };
+      const pejabat = peringkatUPK ? 'UPK BUUKI, JHEAIPP' : `Pejabat Agama Islam ${lokasiPilihan}`;
+      const masaJana = new Date();
+
+      const janaPDF = async () => {
+        if (!window.html2pdf) return paparMesej('Modul PDF belum dimuatkan. Cuba lagi sebentar.');
+        setProses(true); setArkib(null);
+        try {
+          const worker = window.html2pdf().set({ margin: [0.4, 0.5], filename: `Laporan Stok ${bulan}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } }).from(document.getElementById('laporan-cetak'));
+          const uri = await worker.output('datauristring');
+          const r = await api('upload_pdf', { lokasi: lokasiPilihan, bulan, data: uri.split(',')[1] });
+          setArkib(r); paparToast('Laporan disimpan ke arkib Google Drive');
+          try { await worker.save(); } catch (e) { /* muat turun mungkin disekat dalam iframe; pautan Drive tetap tersedia */ }
+        } catch (e) { paparMesej(e.message, 'Gagal menjana laporan'); }
+        finally { setProses(false); }
+      };
+      const th = 'border border-slate-700 px-2 py-1.5 font-semibold', td = 'border border-slate-700 px-2 py-1.5';
+      return (
+        <div className="max-w-4xl mx-auto space-y-4">
+          <Kad className="no-print"><div className="p-4 grid md:grid-cols-[1fr_1.3fr_auto] gap-3 items-end">
+            <Medan label="Bulan laporan"><input type="month" max={hariIni.slice(0, 7)} value={bulan} onChange={e => { setBulan(e.target.value); setArkib(null); }} className={inputCls} /></Medan>
+            <Medan label="Pegawai pengesah"><div className="flex gap-2"><input value={pengesah} onChange={e => setPengesah(e.target.value.toUpperCase())} placeholder="Nama (pilihan)" className={inputCls} /><label className="flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 rounded-lg ring-1 ring-slate-300 cursor-pointer"><input type="checkbox" checked={bp} onChange={e => setBp(e.target.checked)} />b.p.</label></div></Medan>
+            <div className="flex gap-2"><Butang varian="garis" onClick={() => { try { window.print(); } catch (e) { paparMesej('Cetakan tidak disokong di sini. Guna PDF.'); } }}><Printer className="w-4 h-4" />Cetak</Butang><Butang onClick={janaPDF} disabled={proses}>{proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}PDF & Arkib</Butang></div>
+          </div>
+          {arkib && <div className="px-4 pb-4"><a href={arkib.url} target="_blank" rel="noopener" className="flex items-center gap-2 text-sm text-brand-700 bg-brand-50 ring-1 ring-brand-100 rounded-lg px-3 py-2 hover:bg-brand-100"><ExternalLink className="w-4 h-4" />Buka PDF di Google Drive: {arkib.namaFail}</a></div>}
+          </Kad>
+          <div id="laporan-cetak" className="bg-white p-8 md:p-10 border border-slate-300 shadow-sm text-slate-900">
+            <div className="flex justify-between text-xs mb-4"><span>e-Stok JHEAIPP</span><span className="font-semibold">No. Fail: {tetapan.konfig.NO_FAIL || '.......................................'}</span></div>
+            <div className="flex flex-col items-center text-center mb-6">
+              <img src="https://i.postimg.cc/cCxL0BL6/LOGO_PULAU_PINANG.png" alt="Logo Pulau Pinang" className="h-20 mb-3" crossOrigin="anonymous" />
+              <div className="text-xs font-semibold uppercase tracking-wide">Jabatan Hal Ehwal Agama Islam Pulau Pinang</div>
+              <h1 className="text-base font-bold uppercase mt-1">Laporan Bulanan Stok Kursus Praperkahwinan Islam</h1>
+              <div className="w-24 border-t-2 border-slate-900 my-2" />
+            </div>
+            <table className="text-sm mb-5"><tbody>
+              <tr><td className="pr-3 py-0.5 font-semibold">Pusat / Daerah</td><td className="pr-2">:</td><td className="uppercase">{semua ? 'Keseluruhan negeri (semua pusat & daerah)' : lokasiPilihan}</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Tempoh</td><td className="pr-2">:</td><td>{fmtTarikh(dari)} hingga {fmtTarikh(hingga)} ({fmtBulan(bulan)})</td></tr>
+              <tr><td className="pr-3 py-0.5 font-semibold">Bil. transaksi</td><td className="pr-2">:</td><td>{fmtNo(txBulan.length)}</td></tr>
+            </tbody></table>
+            <table className="w-full border-collapse text-sm mb-2">
+              <thead><tr className="bg-slate-100"><th className={`${th} w-10`}>Bil.</th><th className={`${th} text-left`}>Nama Item</th><th className={`${th} text-right`}>Baki Awal</th><th className={`${th} text-right`}>Masuk</th><th className={`${th} text-right`}>Keluar</th><th className={`${th} text-right`}>Baki Akhir</th></tr></thead>
+              <tbody>{tetapan.items.map((i, x) => { const d = data[i.nama]; return <tr key={i.nama}><td className={`${td} text-center`}>{x + 1}</td><td className={td}>{i.nama}</td><td className={`${td} text-right tabular`}>{fmtNo(d.awal)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.masuk)}</td><td className={`${td} text-right tabular`}>{fmtNo(d.keluar)}</td><td className={`${td} text-right tabular font-bold bg-slate-50`}>{fmtNo(d.akhir)}</td></tr>; })}</tbody>
+            </table>
+            <p className="text-[11px] text-slate-600 mb-5">Baki Akhir = Baki Awal + Masuk − Keluar, setakat {fmtTarikh(hingga)}. Rekod yang dibatalkan tidak dikira.{semua && ' Pindahan antara lokasi tidak dikira sebagai masuk/keluar di peringkat negeri.'}</p>
+            {kursus.length > 0 && <div className="text-sm mb-6"><span className="font-semibold">Pengeluaran kursus:</span> {fmtNo(siri.length)} siri{siri.length ? ` (${siri.join(', ')})` : ''}, {fmtNo(peserta)} peserta direkodkan.</div>}
+            <div className="grid grid-cols-2 gap-10 text-sm mt-12">
+              <div><p className="mb-16">Disediakan oleh:</p><div className="border-t border-slate-900 pt-2 text-xs uppercase"><div className="font-bold">{pengguna.nama}</div>{pengguna.jawatan && <div>{pengguna.jawatan}</div>}<div>{pejabat}</div><div className="normal-case mt-1">Tarikh: ...............................</div></div></div>
+              <div><p className="mb-16">Disemak & disahkan oleh:</p><div className="border-t border-slate-900 pt-2 text-xs uppercase">{pengesah && <div className="font-bold">{pengesah}</div>}<div className="font-bold">{bp ? 'b.p. ' : ''}{pengesahInfo.gelaran}</div>{pengesahInfo.jabatan.map(j => <div key={j}>{j}</div>)}<div className="normal-case mt-1">Tarikh: ...............................</div></div></div>
+            </div>
+            <div className="mt-10 pt-2 border-t border-slate-200 text-[10px] text-slate-500 flex justify-between gap-4"><span>Dijana oleh Sistem e-Stok JHEAIPP V3</span><span>{fmtTarikh(hariIni)} {masaJana.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' })} · {pengguna.emel}</span></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== PENGGUNA (ADMIN UPK) =====================
+    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast }) {
+      const [data, setData] = useState(null);
+      const [borang, setBorang] = useState(null);
+      const [simpan, setSimpan] = useState(false);
+      const [cari, setCari] = useState('');
+      useEffect(() => { api('pengguna_senarai').then(setData).catch(e => paparMesej(e.message)); }, []);
+      const peranan = data ? data.peranan : [];
+      const infoPeranan = (kod) => peranan.find(p => p.kod === kod) || {};
+      const hq = tetapan.lokasi[0].nama;
+      const baru = () => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_PAD', lokasi: tetapan.lokasi[1] ? tetapan.lokasi[1].nama : hq, status: 'AKTIF' });
+      const set = (k) => (e) => setBorang(b => { const n = { ...b, [k]: e.target.value }; if (k === 'peranan') n.lokasi = infoPeranan(n.peranan).lokasiHQ ? hq : (n.lokasi === hq ? tetapan.lokasi[1].nama : n.lokasi); return n; });
+      const hantar = async (e) => {
+        e.preventDefault(); setSimpan(true);
+        try { setData(await api('pengguna_simpan', borang)); paparToast(borang.baru ? 'Pengguna didaftarkan' : 'Akaun dikemaskini'); setBorang(null); }
+        catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
+      };
+      if (!data) return <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+      const q = cari.toLowerCase();
+      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.lokasi, u.jawatan].join(' ').toLowerCase().includes(q));
+      const diriSendiri = borang && !borang.baru && borang.emel === saya.emel;
+      return (
+        <div className="grid lg:grid-cols-12 gap-5">
+          <Kad className="lg:col-span-8" title={`Pengguna Berdaftar (${data.pengguna.length})`} actions={<Butang onClick={baru} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar pengguna</Butang>}>
+            <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, emel atau lokasi…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-4 py-2.5">Pengguna</th><th className="text-left font-semibold px-3 py-2.5">Peranan & lokasi</th><th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{senarai.map(u => (
+                <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
+                  <td className="px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
+                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-emas-100 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{infoPeranan(u.peranan).label || u.peranan}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div><div className="text-[11px] text-slate-500 mt-1">{u.lokasi}</div></td>
+                  <td className="px-3 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
+                  <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </Kad>
+          <div className="lg:col-span-4 space-y-4">
+            {borang ? (
+              <Kad title={borang.baru ? 'Daftar Pengguna' : 'Kemaskini Akaun'}>
+                <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
+                  <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}. Pengguna log masuk dengan akaun Google ini.` : 'Emel tidak boleh diubah. Daftar akaun baharu jika emel bertukar.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
+                  <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
+                  <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
+                  <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
+                  <Medan label="Lokasi" nota={infoPeranan(borang.peranan).lokasiHQ ? 'Peranan UPK sentiasa di HQ.' : null}><select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || infoPeranan(borang.peranan).lokasiHQ}>{tetapan.lokasi.filter(l => infoPeranan(borang.peranan).lokasiHQ ? l.nama === hq : l.nama !== hq).map(l => <option key={l.nama}>{l.nama}</option>)}</select></Medan>
+                  <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
+                  {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
+                  <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
+                </form>
+              </Kad>
+            ) : (
+              <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
+                <li><b className="text-slate-800">Admin UPK</b>: kawalan penuh, urus pengguna, jejak audit, paksa baki.</li>
+                <li><b className="text-slate-800">Kerani UPK</b>: rekod stok HQ & pindahan ke PAD, lihat semua lokasi.</li>
+                <li><b className="text-slate-800">Pemantau UPK</b>: lihat data & laporan seluruh negeri.</li>
+                <li><b className="text-slate-800">Kerani PAD</b>: rekod & urus stok daerah sendiri.</li>
+                <li><b className="text-slate-800">Pegawai PAD</b>: semak & pantau daerah sendiri.</li>
+              </ul></Kad>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ===================== JEJAK AUDIT (ADMIN UPK) =====================
+    function JejakAudit({ paparMesej }) {
+      const [log, setLog] = useState(null);
+      const [tTindakan, setTTindakan] = useState(''); const [cari, setCari] = useState('');
+      useEffect(() => { api('audit', { had: 1000 }).then(d => setLog(d.log)).catch(e => { paparMesej(e.message); setLog([]); }); }, []);
+      const warna = (t) => t.includes('BATAL') ? 'bg-red-50 text-red-800 ring-red-200' : t.includes('KEMASKINI') ? 'bg-blue-50 text-blue-800 ring-blue-200' : t.includes('TAMBAH') ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : t.includes('PINDAHAN') ? 'bg-indigo-50 text-indigo-800 ring-indigo-200' : 'bg-slate-100 text-slate-700 ring-slate-200';
+      const ringkas = (s) => { if (!s) return ''; try { const o = JSON.parse(s); if (o.keluar) return `${o.keluar.item} ${o.keluar.kuantiti}: ${o.keluar.lokasi} → ${o.masuk.lokasi}`; if (o.item) return `${fmtTarikh(o.tarikh)} · ${o.lokasi} · ${o.item} · ${o.jenis} · ${o.kuantiti}`; if (o.peranan) return `${o.nama || o.emel} · ${o.peranan} · ${o.lokasi || ''} ${o.status || ''}`; if (o.status) return o.status; if (o.namaFail) return o.namaFail; if (o.laporan) return o.laporan.slice(0, 2).join(' · '); return ''; } catch (e) { return s.slice(0, 120); } };
+      const jenis = log ? [...new Set(log.map(l => l.tindakan))].sort() : [];
+      const q = cari.toLowerCase();
+      const senarai = (log || []).filter(l => (!tTindakan || l.tindakan === tTindakan) && (!q || [l.nama, l.emel, l.idRekod, l.sebab, l.sebelum, l.selepas].join(' ').toLowerCase().includes(q)));
+      return (
+        <Kad title="Jejak Audit" actions={<span className="text-[11px] text-slate-500">Log hanya boleh ditambah, tidak boleh diubah melalui sistem</span>}>
+          <div className="p-3 border-b border-slate-100 grid grid-cols-2 gap-2">
+            <div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, ID rekod, sebab…" value={cari} onChange={e => setCari(e.target.value)} /></div>
+            <select className={`${inputCls} py-1.5`} value={tTindakan} onChange={e => setTTindakan(e.target.value)}><option value="">Semua tindakan</option>{jenis.map(t => <option key={t}>{t}</option>)}</select>
+          </div>
+          {!log ? <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left px-4 py-2.5 font-semibold">Masa</th><th className="text-left px-3 py-2.5 font-semibold">Pengguna</th><th className="text-left px-3 py-2.5 font-semibold">Tindakan</th><th className="text-left px-3 py-2.5 font-semibold">Butiran</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{senarai.slice(0, 300).map((l, i) => (
+                <tr key={i} className="align-top hover:bg-slate-50">
+                  <td className="px-4 py-2 whitespace-nowrap tabular text-xs">{fmtMasa(l.masa)}</td>
+                  <td className="px-3 py-2 text-xs"><div className="font-medium text-slate-800">{l.nama}</div><div className="text-slate-500">{l.peranan}{l.lokasi && ` · ${l.lokasi}`}</div></td>
+                  <td className="px-3 py-2"><Lencana cls={warna(l.tindakan)}>{l.tindakan}</Lencana>{l.idRekod && <div className="text-[11px] text-slate-400 font-mono mt-1">{l.idRekod}</div>}</td>
+                  <td className="px-3 py-2 text-xs text-slate-700">{l.sebelum && <div className="text-slate-500">Sebelum: {ringkas(l.sebelum)}</div>}{l.selepas && <div>Selepas: {ringkas(l.selepas)}</div>}{l.sebab && <div className="text-amber-800 mt-0.5">Sebab: {l.sebab}</div>}</td>
+                </tr>
+              ))}{senarai.length === 0 && <tr><td colSpan="4" className="px-4 py-10 text-center text-slate-500">Tiada rekod.</td></tr>}</tbody>
+            </table></div>
+          )}
+        </Kad>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
