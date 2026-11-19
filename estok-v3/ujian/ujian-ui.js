@@ -48,14 +48,19 @@ const ralat = [];
     await p.goto('file://' + path.join(__dirname, '..', 'src', 'Index.html'));
     return p;
   }
+  const tab = async (p, nama) => {
+    const hamburger = p.locator('button[aria-label="Menu"]');
+    if (await hamburger.isVisible()) await hamburger.click();
+    await p.locator('aside:visible button', { hasText: nama }).first().click();
+  };
   const shot = async (p, n) => { await p.waitForTimeout(500); await p.screenshot({ path: path.join(OUT, n + '.png'), fullPage: true }); };
   const semak = (syarat, mesej) => { if (!syarat) ralat.push('SEMAKAN GAGAL: ' + mesej); };
 
   // Admin
   let p = await buka(ADMIN, { width: 1366, height: 860 });
-  await p.waitForSelector('text=Baki Stok Semasa', { timeout: 60000 });
+  await p.waitForSelector('text=Stok Masuk & Keluar', { timeout: 60000 });
   await shot(p, '01-admin-papan-pemuka');
-  await p.click('nav >> text=Transaksi'); await p.waitForSelector('text=Senarai Transaksi');
+  await tab(p, 'Transaksi'); await p.waitForSelector('text=Senarai Transaksi');
   await shot(p, '02-admin-transaksi');
   await p.locator('label:has-text("Papar dibatal")').click();
   await p.waitForTimeout(400);
@@ -69,21 +74,23 @@ const ralat = [];
   await p.waitForSelector('text=Paksa simpan');
   await shot(p, '03-admin-amaran-baki');
   await p.click('button:has-text("Batal") >> nth=-1');
-  await p.click('nav >> text=Laporan Bulanan'); await p.waitForSelector('#laporan-cetak');
+  await p.fill('header input[placeholder^="Cari"]', 'PDH/3'); await p.press('header input[placeholder^="Cari"]', 'Enter');
+  await p.waitForSelector('text=Senarai Transaksi (8)');
+  await tab(p, 'Laporan Bulanan'); await p.waitForSelector('#laporan-cetak');
   await shot(p, '04-admin-laporan-negeri');
-  await p.click('nav >> text=Pengguna'); await p.waitForSelector('text=Pengguna Berdaftar');
+  await tab(p, 'Pengguna'); await p.waitForSelector('text=Pengguna Berdaftar');
   await p.click('text=Daftar pengguna');
   await shot(p, '05-admin-pengguna');
-  await p.click('nav >> text=Jejak Audit'); await p.waitForSelector('td >> text=BATAL_TRANSAKSI');
+  await tab(p, 'Jejak Audit'); await p.waitForSelector('td >> text=BATAL_TRANSAKSI');
   await shot(p, '06-admin-jejak-audit');
 
   // Kerani PAD (telefon)
   p = await buka(KBD, { width: 390, height: 844 });
-  await p.waitForSelector('text=Baki Stok Semasa', { timeout: 60000 });
-  semak(await p.locator('nav >> text=Pengguna').count() === 0, 'kerani tiada tab Pengguna');
-  semak(await p.locator('nav >> text=Jejak Audit').count() === 0, 'kerani tiada tab Audit');
+  await p.waitForSelector('text=Stok Masuk & Keluar', { timeout: 60000 });
+  semak(await p.locator('aside button', { hasText: 'Pengguna' }).count() === 0, 'kerani tiada tab Pengguna');
+  semak(await p.locator('aside button', { hasText: 'Jejak Audit' }).count() === 0, 'kerani tiada tab Audit');
   await shot(p, '07-kerani-pad-telefon-papan-pemuka');
-  await p.click('nav >> text=Transaksi'); await p.waitForSelector('text=Senarai Transaksi');
+  await tab(p, 'Transaksi'); await p.waitForSelector('text=Senarai Transaksi');
   await p.fill('form input[type=number]', '25');
   await p.click('text=Simpan Transaksi');
   await p.waitForSelector('text=disimpan');
@@ -96,8 +103,8 @@ const ralat = [];
 
   // Pegawai PAD (paparan sahaja)
   p = await buka(PEGBD, { width: 1280, height: 800 });
-  await p.waitForSelector('text=Baki Stok Semasa', { timeout: 60000 });
-  await p.click('nav >> text=Transaksi'); await p.waitForSelector('text=Akaun paparan sahaja');
+  await p.waitForSelector('text=Stok Masuk & Keluar', { timeout: 60000 });
+  await tab(p, 'Transaksi'); await p.waitForSelector('text=Akaun paparan sahaja');
   semak(await p.locator('button[title="Batalkan"]').count() === 0, 'pegawai tiada butang batal');
   await shot(p, '10-pegawai-pad-paparan-sahaja');
 
