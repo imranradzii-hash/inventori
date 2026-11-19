@@ -96,6 +96,8 @@ function createEnv() {
     Utilities: {
       getUuid: () => crypto.randomUUID(),
       formatDate: fmtDate,
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      computeDigest: (alg, v) => Array.from(crypto.createHash(alg).update(typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map(b => b & 255))).digest()).map(b => (b > 127 ? b - 256 : b)),
       base64Decode: s => Array.from(Buffer.from(s, 'base64')).map(b => (b > 127 ? b - 256 : b)),
       newBlob: (bytes, type, name) => ({ bytes, type, name })
     },
@@ -113,7 +115,8 @@ function createEnv() {
   vm.runInContext(kod, ctx, { filename: 'estok-v3.gs' });
   env.ctx = ctx;
   env.call = (fn, ...args) => vm.runInContext(fn, ctx)(...args);
-  env.api = (emel, action, payload) => { env.emelAktif = emel; return JSON.parse(ctx.api(JSON.stringify({ action, payload }))); };
+  env.api = (emel, action, payload, token) => { env.emelAktif = emel; return JSON.parse(ctx.api(JSON.stringify({ action, payload, token }))); };
+  env.pad = (token, action, payload) => env.api('', action, payload, token);
   return env;
 }
 

@@ -34,10 +34,15 @@
     const {
       Package, ArrowRightLeft, FileText, PlusCircle, MapPin, LayoutDashboard, Search, RefreshCw, Loader2, Ban,
       AlertCircle, Download, ShieldCheck, History, AlertTriangle, TrendingUp, TrendingDown, Boxes, CheckCircle2,
-      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye, Menu, Bell, X, ChevronRight
+      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye, Menu, Bell, X, ChevronRight, LogOut, LogIn, KeyRound, Copy, Building2
     } = LucideReact;
 
     // ===================== SAMBUNGAN SERVER =====================
+    // Token sesi Kerani PAD (staf UPK tidak memerlukan token: emel dibaca oleh server)
+    let TOKEN = null;
+    try { TOKEN = sessionStorage.getItem('estok_pad_token'); } catch (e) {}
+    function setToken(t) { TOKEN = t || null; try { t ? sessionStorage.setItem('estok_pad_token', t) : sessionStorage.removeItem('estok_pad_token'); } catch (e) {} }
+
     function api(action, payload = {}) {
       return new Promise((resolve, reject) => {
         if (!window.google || !google.script || !google.script.run) {
@@ -46,10 +51,11 @@
         google.script.run
           .withSuccessHandler(s => {
             let r; try { r = JSON.parse(s); } catch (e) { return reject(new Error('Respons server tidak sah.')); }
+            if (!r.ok && r.kod === 'SESI_TAMAT' && action !== 'bootstrap') window.dispatchEvent(new CustomEvent('estok-sesi-tamat', { detail: r.mesej }));
             r.ok ? resolve(r.data) : reject(Object.assign(new Error(r.mesej), { kod: r.kod }));
           })
           .withFailureHandler(e => reject(Object.assign(new Error((e && e.message) || 'Sambungan ke server gagal. Semak internet anda.'), { kod: 'RANGKAIAN' })))
-          .api(JSON.stringify({ action, payload }));
+          .api(JSON.stringify({ action, payload, token: TOKEN }));
       });
     }
 
@@ -150,17 +156,32 @@
         finally { setMemuat(false); }
       }, []);
 
-      useEffect(() => {
+      const [perluLogin, setPerluLogin] = useState(null); // { mesej } → papar skrin log masuk PAD
+      const mulakan = useCallback(() => {
+        setRalatBoot(null);
         api('bootstrap').then(b => {
-          setBoot(b);
+          setPerluLogin(null); setBoot(b); setTab('dashboard');
           setLokasiPilihan(b.kebenaran.lihatSemua ? 'SEMUA' : b.pengguna.lokasi);
           muatData();
-        }).catch(e => setRalatBoot(e));
+        }).catch(e => {
+          if (['TIADA_EMEL', 'TIADA_AKSES', 'DOMAIN_DITOLAK', 'SESI_TAMAT'].includes(e.kod)) { setToken(null); setPerluLogin({ mesej: e.kod === 'SESI_TAMAT' ? e.message : '' }); }
+          else setRalatBoot(e);
+        });
       }, []);
+      useEffect(() => { mulakan(); }, []);
+      useEffect(() => {
+        const h = (ev) => { setToken(null); setBoot(null); setTransaksi([]); setDialog(null); setPerluLogin({ mesej: ev.detail || 'Sesi anda telah tamat. Sila log masuk semula.' }); };
+        window.addEventListener('estok-sesi-tamat', h); return () => window.removeEventListener('estok-sesi-tamat', h);
+      }, []);
+      const logKeluar = () => setDialog({ tajuk: 'Log keluar', mesej: 'Log keluar daripada e-Stok?', labelYa: 'Log keluar', onYa: async () => {
+        try { await api('logout_pad'); } catch (e) {}
+        setToken(null); setBoot(null); setTransaksi([]); setDialog(null); setPerluLogin({ mesej: '' });
+      } });
 
       const dataLokasi = useMemo(() => lokasiPilihan === 'SEMUA' ? transaksi : transaksi.filter(t => t.lokasi === lokasiPilihan), [transaksi, lokasiPilihan]);
       const amaran = useMemo(() => boot ? kiraAmaran(transaksi, boot.tetapan.items, lokasiPilihan === 'SEMUA' ? boot.kebenaran.lokasiDilihat : [lokasiPilihan]) : [], [transaksi, boot, lokasiPilihan]);
 
+      if (perluLogin) return <SkrinLoginPad mesejAwal={perluLogin.mesej} onBerjaya={() => { setPerluLogin(null); mulakan(); }} />;
       if (ralatBoot) return <SkrinTiadaAkses ralat={ralatBoot} />;
       if (!boot) return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm gap-2 bg-[#eef2f8]"><Loader2 className="w-5 h-5 animate-spin" /> Mengesahkan akaun…</div>;
 
@@ -176,7 +197,7 @@
       const hantarCari = (e) => { e.preventDefault(); setCariHantar(c => ({ q: cariGlobal, n: c.n + 1 })); pilihTab('transaksi'); };
       const hariIni = boot.hariIni || hariIniLokal();
       const k = { pengguna, kebenaran, tetapan, hariIni, transaksi, dataLokasi, lokasiPilihan, amaran, muatData, terimaData, paparMesej, paparToast, setDialog, pilihTab, cariHantar };
-      const panggilan = pengguna.nama.replace(/^(En\.|Encik|Puan|Pn\.|Cik|Ustaz|Ustazah|Dr\.|Tuan)\s+/i, '').split(/\s+(bin|binti|bt|b\.)\s+/i)[0];
+      const panggilan = pengguna.nama.replace(/\s*\([^)]*\)\s*$/, '').replace(/^(En\.|Encik|Puan|Pn\.|Cik|Ustaz|Ustazah|Dr\.|Tuan)\s+/i, '').split(/\s+(bin|binti|bt|b\.)\s+/i)[0];
       const inisial = panggilan.split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase();
       const tajukTab = menu.find(m => m.id === tab)?.label;
 
@@ -199,6 +220,7 @@
             <div className="flex items-center gap-1.5 font-semibold text-white">{pengguna.peranan === 'ADMIN_UPK' && <ShieldCheck className="w-3.5 h-3.5" />}{pengguna.labelPeranan}</div>
             <div className="mt-0.5 text-blue-100/80 truncate">{pengguna.lokasi}</div>
             <div className="mt-2 text-blue-100/60">Versi {boot.versi}</div>
+            {pengguna.jenisAkaun === 'PAD' && <button onClick={logKeluar} className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg bg-white/15 hover:bg-white/25 py-2 text-xs font-semibold text-white"><LogOut className="w-3.5 h-3.5" />Log keluar</button>}
           </div>
         </div>
       );
@@ -230,6 +252,7 @@
                 </div>
                 <button onClick={muatData} disabled={memuat} title={dibacaPada ? `Data setakat ${dibacaPada.slice(11, 16)}` : 'Segar semula'} className="p-2 rounded-full text-slate-500 hover:bg-slate-100"><RefreshCw className={`w-[18px] h-[18px] ${memuat ? 'animate-spin text-brand-600' : ''}`} /></button>
                 <button onClick={() => pilihTab('dashboard')} title={`${amaran.length} amaran stok`} className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100"><Bell className="w-[18px] h-[18px]" />{amaran.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
+                {pengguna.jenisAkaun === 'PAD' && <button onClick={logKeluar} title="Log keluar" className="p-2 rounded-full text-slate-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-[18px] h-[18px]" /></button>}
                 <div className="flex items-center gap-2.5 pl-1 md:pl-2 md:border-l md:border-slate-200">
                   <div className="w-9 h-9 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{inisial}</div>
                   <div className="hidden sm:block leading-tight min-w-0"><div className="text-sm font-semibold text-slate-800 truncate max-w-[190px]">Hai, {panggilan}</div><div className="text-[11px] text-slate-500">{fmtTarikh(hariIni)}</div></div>
@@ -737,67 +760,184 @@
       );
     }
 
+    // ===================== LOG MASUK PAD =====================
+    function SkrinLoginPad({ mesejAwal, onBerjaya }) {
+      const [daerah, setDaerah] = useState(null);
+      const [lokasi, setLokasi] = useState('');
+      const [nama, setNama] = useState('');
+      const [kata, setKata] = useState('');
+      const [lihat, setLihat] = useState(false);
+      const [ralat, setRalat] = useState(mesejAwal || '');
+      const [proses, setProses] = useState(false);
+      useEffect(() => { api('info_login').then(d => setDaerah(d.daerah)).catch(e => { setRalat(e.message); setDaerah([]); }); }, []);
+      const hantar = async (e) => {
+        e.preventDefault(); setRalat('');
+        if (!lokasi) return setRalat('Sila pilih daerah.');
+        if (nama.trim().length < 5) return setRalat('Sila isi nama penuh anda.');
+        setProses(true);
+        try { const r = await api('login_pad', { lokasi, nama, kataLaluan: kata }); setToken(r.token); onBerjaya(); }
+        catch (err) { setRalat(err.message); setKata(''); }
+        finally { setProses(false); }
+      };
+      return (
+        <div className="min-h-screen grid lg:grid-cols-[1.1fr_1fr] bg-[#eef2f8]">
+          <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#1f5fb0] to-[#173f7c] text-white p-12">
+            <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-white/15 ring-1 ring-white/25 flex items-center justify-center"><Package className="w-6 h-6" /></div><div><div className="font-bold">e-Stok JHEAIPP</div><div className="text-xs text-blue-100/80">Inventori Bersepadu UPK & PAD</div></div></div>
+            <div>
+              <h1 className="text-3xl font-bold leading-tight">Rekod stok kursus praperkahwinan<br />Pejabat Agama Daerah</h1>
+              <p className="mt-4 text-blue-100/85 max-w-md text-sm leading-relaxed">Rekod pengeluaran kursus, terima stok dan semak baki daerah anda. Setiap transaksi direkod bersama nama anda untuk tujuan audit jabatan.</p>
+            </div>
+            <div className="text-xs text-blue-100/60">Unit Pembangunan Keluarga · BUUKI · JHEAIPP</div>
+          </div>
+          <div className="flex items-center justify-center p-5">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm ring-1 ring-slate-200/70 p-6 md:p-7">
+              <div className="lg:hidden flex items-center gap-2.5 mb-5"><div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center"><Package className="w-5 h-5" /></div><div className="font-bold text-slate-900">e-Stok JHEAIPP</div></div>
+              <h2 className="text-xl font-bold text-slate-900">Log masuk PAD</h2>
+              <p className="text-sm text-slate-500 mb-5">Guna kata laluan daerah yang diberi oleh UPK.</p>
+              <form onSubmit={hantar} className="space-y-3.5">
+                <Medan label="Daerah">
+                  <div className="relative"><Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <select className={`${inputCls} pl-9 py-2.5`} value={lokasi} onChange={e => setLokasi(e.target.value)} disabled={!daerah}>
+                      <option value="">{daerah ? 'Pilih daerah' : 'Memuatkan…'}</option>
+                      {(daerah || []).map(d => <option key={d.nama} value={d.nama} disabled={!d.aktif}>{d.nama}{d.aktif ? '' : ' (belum aktif)'}</option>)}
+                    </select></div>
+                </Medan>
+                <Medan label="Nama penuh anda" nota="Nama ini direkod pada setiap transaksi yang anda buat.">
+                  <input className={`${inputCls} py-2.5`} autoComplete="name" placeholder="Cth: Siti Aminah binti Yusof" value={nama} onChange={e => setNama(e.target.value)} />
+                </Medan>
+                <Medan label="Kata laluan daerah">
+                  <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input type={lihat ? 'text' : 'password'} autoComplete="current-password" className={`${inputCls} pl-9 pr-16 py-2.5`} value={kata} onChange={e => setKata(e.target.value)} required />
+                    <button type="button" onClick={() => setLihat(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 px-2 py-1 rounded hover:bg-slate-100">{lihat ? 'Sorok' : 'Papar'}</button></div>
+                </Medan>
+                {ralat && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 ring-1 ring-red-200 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{ralat}</div>}
+                <Butang type="submit" className="w-full py-2.5" disabled={proses || !daerah}>{proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}Log masuk</Butang>
+              </form>
+              <p className="text-[11px] text-slate-500 mt-5 leading-relaxed">Jangan kongsi kata laluan dengan pihak luar. Akaun dikunci 15 minit selepas 5 cubaan salah. Staf UPK: guna pautan UPK dan log masuk dengan emel jabatan.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // ===================== PENGGUNA (ADMIN UPK) =====================
-    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast }) {
+    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast, setDialog }) {
       const [data, setData] = useState(null);
       const [borang, setBorang] = useState(null);
+      const [padBorang, setPadBorang] = useState(null);
+      const [kataBaru, setKataBaru] = useState(null);
       const [simpan, setSimpan] = useState(false);
       const [cari, setCari] = useState('');
       useEffect(() => { api('pengguna_senarai').then(setData).catch(e => paparMesej(e.message)); }, []);
       const peranan = data ? data.peranan : [];
-      const infoPeranan = (kod) => peranan.find(p => p.kod === kod) || {};
-      const hq = tetapan.lokasi[0].nama;
-      const baru = () => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_PAD', lokasi: tetapan.lokasi[1] ? tetapan.lokasi[1].nama : hq, status: 'AKTIF' });
-      const set = (k) => (e) => setBorang(b => { const n = { ...b, [k]: e.target.value }; if (k === 'peranan') n.lokasi = infoPeranan(n.peranan).lokasiHQ ? hq : (n.lokasi === hq ? tetapan.lokasi[1].nama : n.lokasi); return n; });
+      const labelPeranan = (kod) => (peranan.find(p => p.kod === kod) || {}).label || kod;
+      const set = (k) => (e) => setBorang(b => ({ ...b, [k]: e.target.value }));
       const hantar = async (e) => {
         e.preventDefault(); setSimpan(true);
         try { setData(await api('pengguna_simpan', borang)); paparToast(borang.baru ? 'Pengguna didaftarkan' : 'Akaun dikemaskini'); setBorang(null); }
         catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
       };
+      const tetapkanPad = async (e) => {
+        e.preventDefault(); setSimpan(true);
+        try {
+          const r = await api('pad_tetapkan', { lokasi: padBorang.lokasi, kataLaluan: padBorang.jana ? '' : padBorang.kataLaluan });
+          setData(d => ({ ...d, akaunPad: r.akaun })); setPadBorang(null);
+          if (r.kataLaluan) setKataBaru({ lokasi: r.lokasi, kata: r.kataLaluan }); else paparToast('Kata laluan ' + r.lokasi + ' ditetapkan');
+        } catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
+      };
+      const tukarStatusPad = (a) => setDialog({
+        tajuk: a.aktif ? 'Nyahaktif akses daerah' : 'Aktifkan akses daerah', bahaya: a.aktif, labelYa: a.aktif ? 'Nyahaktif' : 'Aktifkan',
+        mesej: a.aktif ? `Kerani ${a.lokasi} tidak akan dapat log masuk, dan sesi yang sedang berjalan akan ditamatkan serta-merta.` : `Kerani ${a.lokasi} boleh log masuk semula dengan kata laluan sedia ada.`,
+        onYa: async () => { try { const r = await api('pad_status', { lokasi: a.lokasi, aktif: !a.aktif }); setData(d => ({ ...d, akaunPad: r.akaun })); setDialog(null); paparToast('Status dikemaskini'); } catch (e) { paparMesej(e.message, 'Gagal'); } }
+      });
       if (!data) return <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
       const q = cari.toLowerCase();
-      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.lokasi, u.jawatan].join(' ').toLowerCase().includes(q));
+      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.jawatan].join(' ').toLowerCase().includes(q));
       const diriSendiri = borang && !borang.baru && borang.emel === saya.emel;
+      const statusPad = (a) => !a.adaKataLaluan ? { t: 'Belum ditetapkan', c: 'bg-slate-100 text-slate-600 ring-slate-200' } : a.dikunci ? { t: 'Dikunci 15 min', c: 'bg-amber-50 text-amber-800 ring-amber-200' } : a.aktif ? { t: 'Aktif', c: 'bg-emerald-50 text-emerald-800 ring-emerald-200' } : { t: 'Tidak aktif', c: 'bg-red-50 text-red-700 ring-red-200' };
+      const th = 'text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-3 md:px-4 py-2.5';
       return (
-        <div className="grid lg:grid-cols-12 gap-5 [&>*]:min-w-0">
-          <Kad className="lg:col-span-8" title={`Pengguna Berdaftar (${data.pengguna.length})`} actions={<Butang onClick={baru} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar pengguna</Butang>}>
-            <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, emel atau lokasi…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+        <div className="space-y-5">
+          <Kad title={<span className="flex items-center gap-2"><Building2 className="w-4 h-4 text-brand-600" />Akaun Daerah (Kerani PAD)</span>} actions={<span className="text-[11px] text-slate-500 hidden sm:inline">Satu kata laluan bagi setiap daerah</span>}>
             <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-3 md:px-4 py-2.5">Pengguna</th><th className="text-left font-semibold px-3 py-2.5">Peranan & lokasi</th><th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
-              <tbody className="divide-y divide-slate-100">{senarai.map(u => (
-                <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
-                  <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
-                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-emas-100 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{infoPeranan(u.peranan).label || u.peranan}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div><div className="text-[11px] text-slate-500 mt-1">{u.lokasi}</div></td>
-                  <td className="px-3 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
-                  <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+              <thead className="bg-slate-50/80"><tr><th className={th}>Daerah</th><th className={th}>Status</th><th className={`${th} hidden md:table-cell`}>Kemaskini terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{data.akaunPad.map(a => { const st = statusPad(a); return (
+                <tr key={a.kod}>
+                  <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{a.lokasi}</div><div className="text-[11px] text-slate-500 md:hidden">{a.dikemaskiniPada ? fmtMasa(a.dikemaskiniPada) : ''}</div></td>
+                  <td className="px-3 md:px-4 py-2.5"><Lencana cls={st.c}>{st.t}</Lencana></td>
+                  <td className="px-3 md:px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell">{a.dikemaskiniPada ? `${fmtMasa(a.dikemaskiniPada)} · ${a.dikemaskiniOleh}` : '—'}</td>
+                  <td className="px-3 py-2.5"><div className="flex justify-end gap-1.5">
+                    <Butang varian="garis" className="py-1.5 px-2.5 text-xs" onClick={() => setPadBorang({ lokasi: a.lokasi, kataLaluan: '', jana: true, ada: a.adaKataLaluan })}><KeyRound className="w-3.5 h-3.5" /><span className="hidden sm:inline">{a.adaKataLaluan ? 'Tukar' : 'Tetapkan'}</span></Butang>
+                    {a.adaKataLaluan && <Butang varian="garis" className="py-1.5 px-2.5 text-xs" onClick={() => tukarStatusPad(a)}>{a.aktif ? 'Nyahaktif' : 'Aktifkan'}</Butang>}
+                  </div></td>
                 </tr>
-              ))}</tbody>
+              ); })}</tbody>
             </table></div>
+            <p className="px-4 py-2.5 text-[11px] text-slate-500 border-t border-slate-100">Tukar kata laluan bila kerani bertukar atau sekurang-kurangnya setiap 3–6 bulan. Menukar kata laluan atau menyahaktif daerah akan menamatkan semua sesi daerah tersebut serta-merta.</p>
           </Kad>
-          <div className="lg:col-span-4 space-y-4">
-            {borang ? (
-              <Kad title={borang.baru ? 'Daftar Pengguna' : 'Kemaskini Akaun'}>
-                <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
-                  <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}. Pengguna log masuk dengan akaun Google ini.` : 'Emel tidak boleh diubah. Daftar akaun baharu jika emel bertukar.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
-                  <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
-                  <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
-                  <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
-                  <Medan label="Lokasi" nota={infoPeranan(borang.peranan).lokasiHQ ? 'Peranan UPK sentiasa di HQ.' : null}><select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || infoPeranan(borang.peranan).lokasiHQ}>{tetapan.lokasi.filter(l => infoPeranan(borang.peranan).lokasiHQ ? l.nama === hq : l.nama !== hq).map(l => <option key={l.nama}>{l.nama}</option>)}</select></Medan>
-                  <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
-                  {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
-                  <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
-                </form>
-              </Kad>
-            ) : (
-              <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
-                <li><b className="text-slate-800">Admin UPK</b>: kawalan penuh, urus pengguna, jejak audit, paksa baki.</li>
-                <li><b className="text-slate-800">Kerani UPK</b>: rekod stok HQ & pindahan ke PAD, lihat semua lokasi.</li>
-                <li><b className="text-slate-800">Pemantau UPK</b>: lihat data & laporan seluruh negeri.</li>
-                <li><b className="text-slate-800">Kerani PAD</b>: rekod & urus stok daerah sendiri.</li>
-                <li><b className="text-slate-800">Pegawai PAD</b>: semak & pantau daerah sendiri.</li>
-              </ul></Kad>
-            )}
+
+          <div className="grid lg:grid-cols-12 gap-5 [&>*]:min-w-0">
+            <Kad className="lg:col-span-8" title={`Staf UPK (log masuk emel) · ${data.pengguna.length}`} actions={<Butang onClick={() => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_UPK', status: 'AKTIF' })} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar staf</Butang>}>
+              <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama atau emel…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="bg-slate-50/80"><tr><th className={th}>Staf</th><th className={th}>Peranan</th><th className={`${th} hidden md:table-cell`}>Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{senarai.map(u => (
+                  <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
+                    <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500 break-all">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
+                    <td className="px-3 md:px-4 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{labelPeranan(u.peranan)}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div></td>
+                    <td className="px-3 md:px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
+                    <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </Kad>
+            <div className="lg:col-span-4">
+              {borang ? (
+                <Kad title={borang.baru ? 'Daftar Staf UPK' : 'Kemaskini Akaun'}>
+                  <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
+                    <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}.` : 'Emel tidak boleh diubah.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
+                    <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
+                    <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
+                    <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
+                    <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
+                    {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
+                    <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
+                  </form>
+                </Kad>
+              ) : (
+                <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
+                  <li><b className="text-slate-800">Admin UPK</b> (emel): kawalan penuh, urus akaun, kata laluan daerah, jejak audit.</li>
+                  <li><b className="text-slate-800">Kerani UPK</b> (emel): rekod stok HQ dan pindahan ke PAD; lihat semua lokasi.</li>
+                  <li><b className="text-slate-800">Pemantau UPK</b> (emel): lihat data dan laporan seluruh negeri.</li>
+                  <li><b className="text-slate-800">Kerani PAD</b> (kata laluan daerah + nama): rekod dan urus stok daerah sendiri.</li>
+                </ul></Kad>
+              )}
+            </div>
           </div>
+
+          {padBorang && (
+            <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4" onClick={() => !simpan && setPadBorang(null)}>
+              <form onSubmit={tetapkanPad} className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2.5"><KeyRound className="w-5 h-5 text-brand-600" /><h3 className="text-base font-bold text-slate-900">{padBorang.ada ? 'Tukar' : 'Tetapkan'} kata laluan · {padBorang.lokasi}</h3></div>
+                {padBorang.ada && <p className="text-sm text-amber-800 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-3 py-2">Kerani daerah ini yang sedang log masuk akan dilog keluar serta-merta.</p>}
+                <label className="flex items-start gap-2.5 text-sm cursor-pointer"><input type="radio" className="mt-1" checked={padBorang.jana} onChange={() => setPadBorang(b => ({ ...b, jana: true }))} /><span><b>Jana automatik</b> <span className="text-slate-500">(disyorkan) kata laluan rawak 10 aksara dipaparkan sekali sahaja</span></span></label>
+                <label className="flex items-start gap-2.5 text-sm cursor-pointer"><input type="radio" className="mt-1" checked={!padBorang.jana} onChange={() => setPadBorang(b => ({ ...b, jana: false }))} /><span><b>Taip sendiri</b> <span className="text-slate-500">minimum 8 aksara, ada huruf dan nombor</span></span></label>
+                {!padBorang.jana && <input className={inputCls} autoFocus value={padBorang.kataLaluan} onChange={e => setPadBorang(b => ({ ...b, kataLaluan: e.target.value }))} placeholder="Kata laluan baharu" />}
+                <div className="flex justify-end gap-2"><Butang type="button" varian="lembut" onClick={() => setPadBorang(null)} disabled={simpan}>Batal</Butang><Butang type="submit" disabled={simpan || (!padBorang.jana && padBorang.kataLaluan.length < 8)}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang></div>
+              </form>
+            </div>
+          )}
+          {kataBaru && (
+            <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full">
+                <div className="flex items-center gap-2.5 mb-2"><CheckCircle2 className="w-5 h-5 text-emerald-600" /><h3 className="text-base font-bold text-slate-900">Kata laluan {kataBaru.lokasi}</h3></div>
+                <p className="text-sm text-slate-600 mb-4">Salin dan serahkan kepada kerani daerah melalui saluran rasmi. Kata laluan ini <b>tidak akan dipaparkan lagi</b>.</p>
+                <div className="flex items-center gap-2 bg-slate-50 ring-1 ring-slate-200 rounded-xl px-4 py-3 mb-5"><code className="text-lg font-bold tracking-wider text-slate-900 flex-1 select-all">{kataBaru.kata}</code>
+                  <button onClick={() => { try { navigator.clipboard.writeText(kataBaru.kata); paparToast('Disalin'); } catch (e) {} }} className="p-2 rounded-lg hover:bg-white ring-1 ring-slate-200" title="Salin"><Copy className="w-4 h-4" /></button></div>
+                <Butang className="w-full" onClick={() => setKataBaru(null)}>Saya sudah simpan, tutup</Butang>
+              </div>
+            </div>
+          )}
         </div>
       );
     }

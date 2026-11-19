@@ -5,10 +5,11 @@
  * Code.gs — titik masuk aplikasi, konfigurasi dan penghala API.
  *
  * Model keselamatan:
- *  - Web app di-deploy "Execute as: Me" + "Anyone within <domain jabatan>".
- *  - Identiti pengguna = emel Google kerajaan yang dibaca di server (Session.getActiveUser()).
- *    Frontend tidak menghantar identiti; ia tidak boleh dipalsukan dari pelayar.
- *  - Peranan & lokasi dibaca dari helaian PENGGUNA pada SETIAP panggilan API.
+ *  - Dua deployment kod yang sama:
+ *      Pautan UPK: "Execute as: Me" + "Anyone within <domain>" → identiti = emel Google kerajaan.
+ *      Pautan PAD: "Execute as: Me" + "Anyone" → log masuk kata laluan daerah + nama penuh → token sesi.
+ *  - Frontend tidak boleh menentukan identiti sendiri; emel dibaca di server, token disemak di server.
+ *  - Peranan & lokasi disemak pada SETIAP panggilan API.
  */
 
 const APP = {
@@ -45,8 +46,13 @@ function api(requestJson) {
   try {
     SETTINGS_MEMO_ = null;
     req = JSON.parse(requestJson || '{}');
-    const user = currentUser_(); // lempar ralat jika emel tidak berdaftar / tidak aktif
     const p = req.payload || {};
+    // Tindakan awam (sebelum log masuk)
+    if (req.action === 'info_login') return JSON.stringify({ ok: true, data: padLoginInfo_() });
+    if (req.action === 'login_pad') return JSON.stringify({ ok: true, data: withLock_(() => loginPad_(p)) });
+    if (req.action === 'logout_pad') return JSON.stringify({ ok: true, data: logoutPad_(req.token) });
+
+    const user = resolveUser_(req); // token PAD atau emel UPK; lempar ralat jika tidak sah
     let data;
     switch (req.action) {
       case 'bootstrap':        data = bootstrap_(user); break;
@@ -57,6 +63,8 @@ function api(requestJson) {
       case 'batal':            data = withLock_(() => voidTransaction_(user, p)); break;
       case 'pengguna_senarai': data = listUsers_(user); break;
       case 'pengguna_simpan':  data = withLock_(() => saveUser_(user, p)); break;
+      case 'pad_tetapkan':     data = withLock_(() => setPadPassword_(user, p)); break;
+      case 'pad_status':       data = withLock_(() => setPadStatus_(user, p)); break;
       case 'audit':            data = getAuditLog_(user, p); break;
       case 'upload_pdf':       data = uploadToDrive_(user, p); break;
       default: throw new AppError_('TINDAKAN_TIDAK_SAH', 'Tindakan tidak dibenarkan.');

@@ -12,7 +12,13 @@ require('fs').mkdirSync(OUT, { recursive: true });
   // buka panel demo, tukar ke kerani BD
   await p.click('#demo-panel .pil'); await p.waitForTimeout(200);
   await p.screenshot({ path: OUT + '/02-panel.png' });
-  await p.click('#demo-panel .u:has-text("Siti Aminah")');
+  await p.click('#demo-panel .u:has-text("Kerani PAD")');
+  await p.waitForSelector('text=Log masuk PAD', { timeout: 60000 });
+  await p.screenshot({ path: OUT + '/02b-log-masuk-pad.png' });
+  await p.selectOption('select', 'Daerah Barat Daya');
+  await p.fill('input[autocomplete=name]', 'Siti Aminah binti Yusof');
+  await p.fill('input[autocomplete=current-password]', 'Demo2026pad');
+  await p.click('button[type=submit]');
   await p.waitForSelector('text=Stok Masuk & Keluar', { timeout: 60000 });
   const lokasi = await p.textContent('main');
   console.log('Kerani nampak Barat Daya:', lokasi.includes('Daerah Barat Daya'), '· tiada tab Pengguna:', (await p.locator('aside button', { hasText: 'Pengguna' }).count()) === 0);
@@ -30,11 +36,9 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await p.click('text=PDF & Arkib'); await p.waitForSelector('text=Buka PDF di Google Drive', { timeout: 60000 });
   console.log('PDF dijana & pautan dipapar: ya');
   // tidak berdaftar
-  await p.click('#demo-panel .pil'); await p.click('#demo-panel .u:has-text("Staf belum didaftar")');
-  await p.waitForSelector('text=Akses tidak dibenarkan', { timeout: 60000 });
   // reset
   await p.click('#demo-panel .pil'); p.once('dialog', d => d.accept()); await p.click('#demo-panel .reset');
-  await p.waitForSelector('text=Akses tidak dibenarkan', { timeout: 60000 });
+  await p.waitForSelector('text=Log masuk PAD', { timeout: 60000 });
   await p.click('#demo-panel .pil'); await p.click('#demo-panel .u:has-text("Muhammad Imran")');
   await p.waitForSelector('text=Stok Masuk & Keluar', { timeout: 60000 });
   await p.locator('aside:visible button', { hasText: 'Transaksi' }).click();

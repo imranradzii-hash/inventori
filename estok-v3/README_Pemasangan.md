@@ -1,6 +1,13 @@
 # e-Stok JHEAIPP V3 — Fasa 0 & 1: Panduan Pemasangan
 
-Sistem Pengurusan Inventori Bersepadu UPK & PAD. Platform: Google Apps Script HTML Service + Google Sheets sedia ada + Google Drive. Log masuk menggunakan **emel Google kerajaan**; tiada kata laluan disimpan dalam sistem.
+Sistem Pengurusan Inventori Bersepadu UPK & PAD. Platform: Google Apps Script HTML Service + Google Sheets sedia ada + Google Drive.
+
+Dua cara log masuk, satu kod, dua pautan:
+
+| Pengguna | Pautan | Cara log masuk |
+|---|---|---|
+| Staf UPK (Admin, Kerani UPK, Pemantau) | Pautan UPK | Emel Google kerajaan, didaftarkan dalam tab Pengguna |
+| Kerani PAD | Pautan PAD | Pilih daerah, isi nama penuh, masukkan kata laluan daerah |
 
 ## Kandungan pakej
 
@@ -17,15 +24,24 @@ Sistem Pengurusan Inventori Bersepadu UPK & PAD. Platform: Google Apps Script HT
 
 ## Peranan
 
-| Peranan | Lihat | Rekod / edit / batal | Lain-lain |
-|---|---|---|---|
-| ADMIN_UPK | Semua lokasi | Semua lokasi, boleh paksa baki negatif (ditanda dalam audit) | Urus pengguna, jejak audit |
-| KERANI_UPK | Semua lokasi | HQ sahaja, termasuk pindahan HQ ke PAD | — |
-| PEMANTAU_UPK | Semua lokasi | Tiada | Laporan negeri |
-| KERANI_PAD | Daerah sendiri | Daerah sendiri | — |
-| PEGAWAI_PAD | Daerah sendiri | Tiada | Laporan daerah |
+| Peranan | Log masuk | Lihat | Rekod / edit / batal | Lain-lain |
+|---|---|---|---|---|
+| ADMIN_UPK | Emel | Semua lokasi | Semua lokasi, boleh paksa baki negatif (ditanda dalam audit) | Urus staf UPK, kata laluan daerah, jejak audit |
+| KERANI_UPK | Emel | Semua lokasi | HQ sahaja, termasuk pindahan HQ ke PAD | — |
+| PEMANTAU_UPK | Emel | Semua lokasi | Tiada | Laporan negeri |
+| KERANI_PAD | Kata laluan daerah + nama | Daerah sendiri | Daerah sendiri | — |
 
-Semua peraturan ini disemak dalam Apps Script (`canView_`, `canWrite_` dalam `Auth.gs`) pada setiap panggilan. Menu yang disorok di skrin hanyalah paparan.
+Semua peraturan disemak dalam Apps Script (`canView_`, `canWrite_` dalam `Auth.gs`) pada setiap panggilan.
+
+### Kawalan kata laluan daerah
+
+- Kata laluan disimpan sebagai hash SHA-256 bersalt (+ pepper) dalam **Script Properties**, bukan dalam Sheet.
+- Hanya Admin UPK boleh tetapkan atau tukar (tab Pengguna → Akaun Daerah). Pilihan "Jana automatik" memaparkan kata laluan sekali sahaja.
+- Nama penuh wajib setiap kali log masuk dan direkod pada setiap transaksi dan dalam jejak audit.
+- 5 cubaan salah → daerah dikunci 15 minit. Admin boleh buka kunci dengan menetapkan semula kata laluan.
+- Sesi tamat selepas 2 jam tanpa aktiviti atau 8 jam secara mutlak.
+- Menukar kata laluan atau menyahaktif daerah menamatkan semua sesi daerah itu serta-merta.
+- Tukar kata laluan bila kerani bertukar, atau setiap 3–6 bulan.
 
 ## Langkah pemasangan (buat pada SALINAN dahulu)
 
@@ -45,12 +61,22 @@ Semua peraturan ini disemak dalam Apps Script (`canView_`, `canWrite_` dalam `Au
    - helaian `PENGGUNA`, `AUDIT_LOG`, `TETAPAN`, `ARKIB_LAPORAN` dicipta.
 6. **e-Stok V3 > Semak integriti data**. Baca isu yang dilaporkan (item/lokasi tidak dikenali, tarikh rosak, baki negatif). Betulkan dalam Sheet jika perlu, kemudian jalankan semula.
 7. **e-Stok V3 > 2. Daftar saya sebagai Admin pertama**. Emel anda didaftar sebagai ADMIN_UPK dan domain emel dikunci.
-8. **Deploy > New deployment > Web app**:
+8. **Deployment 1, pautan UPK**: Deploy > New deployment > Web app
+   - Description: `e-Stok UPK`
    - Execute as: **Me**
    - Who has access: **Anyone within [domain jabatan]**
-   - Salin URL `/exec`.
-9. Buka URL, daftar pengguna lain melalui tab **Pengguna**.
-10. Semak helaian `TETAPAN`: senarai item, paras stok minimum (lajur Nilai 2), `NO_FAIL`, `FOLDER_ARKIB_ID`.
+   - Salin URL `/exec`. Ini pautan untuk staf UPK sahaja.
+9. **Deployment 2, pautan PAD**: Deploy > New deployment > Web app (sekali lagi)
+   - Description: `e-Stok PAD`
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+   - Salin URL `/exec`. Ini pautan untuk kerani PAD.
+   - Nota: setiap deployment mempunyai tetapan akses sendiri. Sahkan dengan membuka pautan PAD dalam tetingkap inkognito (tanpa log masuk Google): skrin "Log masuk PAD" mesti muncul.
+   - Bila kod dikemas kini kemudian: Deploy > Manage deployments > Edit **kedua-dua** deployment > Version: New version.
+10. Buka pautan UPK. Dalam tab **Pengguna**:
+    - daftar staf UPK lain (emel),
+    - tetapkan kata laluan bagi setiap daerah di bahagian **Akaun Daerah**, dan serahkan kepada kerani melalui saluran rasmi.
+11. Semak helaian `TETAPAN`: senarai item, paras stok minimum (lajur Nilai 2), `NO_FAIL`, `FOLDER_ARKIB_ID`.
 
 Jangan ubah atau padam Google Sheets V2 asal sehingga ujian penerimaan di bawah semuanya lulus.
 
@@ -59,8 +85,11 @@ Jangan ubah atau padam Google Sheets V2 asal sehingga ujian penerimaan di bawah 
 - [ ] Bilangan baris TRANSAKSI sama sebelum dan selepas setup; nilai lajur A–L tidak berubah.
 - [ ] Baki setiap item di setiap lokasi sama dengan V2.
 - [ ] Admin pertama boleh buka sistem.
-- [ ] Emel yang belum didaftar mendapat skrin "Akses tidak dibenarkan".
-- [ ] Admin boleh daftar Kerani PAD; kerani boleh buka sistem dengan akaun Google sendiri.
+- [ ] Pautan PAD dibuka dalam inkognito → skrin "Log masuk PAD".
+- [ ] Admin boleh tetapkan kata laluan setiap daerah; kata laluan tidak kelihatan dalam mana-mana helaian Sheet.
+- [ ] Kerani PAD boleh log masuk dengan kata laluan daerah + nama; nama itu muncul pada transaksi dan jejak audit.
+- [ ] Kata laluan salah 5 kali → daerah dikunci; daerah lain tidak terjejas.
+- [ ] Tukar kata laluan → kerani yang sedang log masuk terkeluar.
 - [ ] Kerani PAD hanya nampak daerah sendiri.
 - [ ] Kerani PAD tidak boleh rekod stok untuk daerah lain.
 - [ ] Transaksi keluar yang melebihi baki ditolak.
@@ -78,11 +107,14 @@ node estok-v3/ujian/ujian-backend.js
 node estok-v3/ujian/ujian-ui.js
 ```
 
-`ujian-backend.js` menjalankan kod `.gs` sebenar dalam simulasi Apps Script (48 ujian: migrasi, akses, ketepatan baki, audit). `ujian-ui.js` menjalankan `Index.html` sebenar dalam Chromium dan disambungkan ke backend yang sama. Simulasi bukan Google sebenar, jadi ujian manual di atas tetap wajib.
+`ujian-backend.js` menjalankan kod `.gs` sebenar dalam simulasi Apps Script (61 ujian: migrasi, akses, log masuk PAD, ketepatan baki, audit). `ujian-ui.js` menjalankan `Index.html` sebenar dalam Chromium dan disambungkan ke backend yang sama. Simulasi bukan Google sebenar, jadi ujian manual di atas tetap wajib.
 
 ## Perkara yang perlu diketahui
 
-- **Emel pengguna** hanya boleh dibaca oleh skrip jika pengguna dan pemilik skrip berada dalam domain Google Workspace yang sama. Jika skrin menunjukkan "tidak dapat mengenal pasti akaun", semak tetapan deployment dan polisi admin Workspace.
+- **Emel staf UPK** hanya boleh dibaca oleh skrip jika pengguna dan pemilik skrip berada dalam domain Google Workspace yang sama. Jika staf UPK nampak skrin "Log masuk PAD" pada pautan UPK, emelnya belum didaftarkan atau tetapan deployment perlu disemak.
+- **Pautan PAD terbuka kepada umum** (sesiapa yang ada pautan boleh lihat skrin log masuk). Kawalan sebenar ialah kata laluan, had cubaan dan token sesi di server. Jangan siarkan pautan PAD di laman awam.
+- **Akauntabiliti PAD** bergantung pada nama yang ditaip. Sistem tahu daerah mana yang merekod, tetapi tidak dapat mengesahkan identiti individu.
+- **Kelajuan log masuk PAD**: hash diulang 500 kali (`PAD_CFG.HASH_ITERASI` dalam `Auth.gs`). Jika log masuk mengambil lebih 3 saat dalam Apps Script sebenar, turunkan nilai ini dan tetapkan semula semua kata laluan daerah.
 - **Muat turun PDF** dari dalam HTML Service mungkin disekat oleh pelayar. Salinan PDF tetap disimpan ke Drive, dan pautan "Buka PDF di Google Drive" dipaparkan selepas laporan dijana.
 - **Semakan baki** berdasarkan baki semasa keseluruhan, bukan baki pada tarikh transaksi. Rekod bertarikh lampau masih boleh menjadikan baki sejarah negatif seketika. Semak integriti akan melaporkan baki akhir negatif.
 - **Rekod pindahan V2** tiada pautan pasangan. Ia dikira dengan betul dalam baki, tetapi dalam paparan negeri ia muncul sebagai masuk dan keluar.

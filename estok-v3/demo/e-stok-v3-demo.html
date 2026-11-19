@@ -33,17 +33,14 @@
 <script>
 /* ===== e-Stok V3 DEMO: simulasi Google Apps Script dalam pelayar ===== */
 (function () {
-  const KUNCI = 'estok_v3_demo_data_v1';
+  const KUNCI = 'estok_v3_demo_data_v2';
   const DOMAIN = 'contoh.gov.my';
   const PENGGUNA_DEMO = [
     { emel: 'imran@' + DOMAIN, nama: 'En. Muhammad Imran bin Mohamed Radzi', jawatan: 'Pentadbir Sistem e-Stok', peranan: 'ADMIN_UPK', lokasi: 'UPK BUUKI (HQ)' },
     { emel: 'kerani.upk@' + DOMAIN, nama: 'Nurul Aina binti Hassan', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_UPK', lokasi: 'UPK BUUKI (HQ)' },
     { emel: 'pemantau@' + DOMAIN, nama: 'Ahmad Faiz bin Osman', jawatan: 'Penolong Pengarah', peranan: 'PEMANTAU_UPK', lokasi: 'UPK BUUKI (HQ)' },
-    { emel: 'kerani.bd@' + DOMAIN, nama: 'Siti Aminah binti Yusof', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_PAD', lokasi: 'Daerah Barat Daya' },
-    { emel: 'kerani.tl@' + DOMAIN, nama: 'Mohd Hafiz bin Ali', jawatan: 'Pembantu Tadbir', peranan: 'KERANI_PAD', lokasi: 'Daerah Timur Laut' },
-    { emel: 'pegawai.bd@' + DOMAIN, nama: 'Ustaz Rahman bin Ismail', jawatan: 'Pegawai Tadbir Agama', peranan: 'PEGAWAI_PAD', lokasi: 'Daerah Barat Daya' }
   ];
-  const TIDAK_BERDAFTAR = 'staf.baru@' + DOMAIN;
+  const KATA_DEMO = 'Demo2026pad';
   const simpanLS = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   const bacaLS = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const bacaSS = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
@@ -85,11 +82,33 @@
     getSheetByName(n) { return this.sheets.find(s => s.name === n) || null; },
     insertSheet(n) { const s = new Sheet(n); this.sheets.push(s); return s; } };
   let props = {};
-  const cache = {};
+  let cache = {};
   const fail = {};
   const env = { emel: '' };
 
   const uuid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+  function sha256(str) { // SHA-256 segerak (setara Utilities.computeDigest)
+    const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+    const b = Array.from(new TextEncoder().encode(str)); const l = b.length * 8;
+    b.push(0x80); while (b.length % 64 !== 56) b.push(0);
+    for (let i = 7; i >= 0; i--) b.push(i > 3 ? 0 : (l >>> (i * 8)) & 255);
+    let H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    const r = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let o = 0; o < b.length; o += 64) {
+      const w = new Array(64);
+      for (let i = 0; i < 16; i++) w[i] = (b[o + i * 4] << 24) | (b[o + i * 4 + 1] << 16) | (b[o + i * 4 + 2] << 8) | b[o + i * 4 + 3];
+      for (let i = 16; i < 64; i++) { const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10); w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0; }
+      let [a, bb, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+        const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & bb) ^ (a & c) ^ (bb & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      H = H.map((x, i) => (x + [a, bb, c, d, e, f, g, h][i]) | 0);
+    }
+    const out = []; H.forEach(x => { for (let i = 3; i >= 0; i--) { const v = (x >>> (i * 8)) & 255; out.push(v > 127 ? v - 256 : v); } });
+    return out;
+  }
   const SpreadsheetApp = { getActiveSpreadsheet: () => ss, openById: () => ss, getUi: () => { throw new Error('tiada UI'); } };
   const PropertiesService = { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); } }) };
   const CacheService = { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = String(v); }, remove: k => { delete cache[k]; } }) };
@@ -97,6 +116,7 @@
   const Session = { getActiveUser: () => ({ getEmail: () => env.emel }), getEffectiveUser: () => ({ getEmail: () => 'imran@' + DOMAIN }), getScriptTimeZone: () => 'Asia/Kuala_Lumpur' };
   const Utilities = {
     getUuid: uuid, formatDate: fmtDate,
+    DigestAlgorithm: { SHA_256: 'SHA-256' }, computeDigest: (alg, v) => sha256(String(v)),
     base64Decode: s => { const b = atob(s); const a = new Array(b.length); for (let i = 0; i < b.length; i++) { const c = b.charCodeAt(i); a[i] = c > 127 ? c - 256 : c; } return a; },
     newBlob: (bytes, type, name) => ({ bytes, type, name })
   };
@@ -117,10 +137,11 @@
  * Code.gs — titik masuk aplikasi, konfigurasi dan penghala API.
  *
  * Model keselamatan:
- *  - Web app di-deploy "Execute as: Me" + "Anyone within <domain jabatan>".
- *  - Identiti pengguna = emel Google kerajaan yang dibaca di server (Session.getActiveUser()).
- *    Frontend tidak menghantar identiti; ia tidak boleh dipalsukan dari pelayar.
- *  - Peranan & lokasi dibaca dari helaian PENGGUNA pada SETIAP panggilan API.
+ *  - Dua deployment kod yang sama:
+ *      Pautan UPK: "Execute as: Me" + "Anyone within <domain>" → identiti = emel Google kerajaan.
+ *      Pautan PAD: "Execute as: Me" + "Anyone" → log masuk kata laluan daerah + nama penuh → token sesi.
+ *  - Frontend tidak boleh menentukan identiti sendiri; emel dibaca di server, token disemak di server.
+ *  - Peranan & lokasi disemak pada SETIAP panggilan API.
  */
 
 const APP = {
@@ -157,8 +178,13 @@ function api(requestJson) {
   try {
     SETTINGS_MEMO_ = null;
     req = JSON.parse(requestJson || '{}');
-    const user = currentUser_(); // lempar ralat jika emel tidak berdaftar / tidak aktif
     const p = req.payload || {};
+    // Tindakan awam (sebelum log masuk)
+    if (req.action === 'info_login') return JSON.stringify({ ok: true, data: padLoginInfo_() });
+    if (req.action === 'login_pad') return JSON.stringify({ ok: true, data: withLock_(() => loginPad_(p)) });
+    if (req.action === 'logout_pad') return JSON.stringify({ ok: true, data: logoutPad_(req.token) });
+
+    const user = resolveUser_(req); // token PAD atau emel UPK; lempar ralat jika tidak sah
     let data;
     switch (req.action) {
       case 'bootstrap':        data = bootstrap_(user); break;
@@ -169,6 +195,8 @@ function api(requestJson) {
       case 'batal':            data = withLock_(() => voidTransaction_(user, p)); break;
       case 'pengguna_senarai': data = listUsers_(user); break;
       case 'pengguna_simpan':  data = withLock_(() => saveUser_(user, p)); break;
+      case 'pad_tetapkan':     data = withLock_(() => setPadPassword_(user, p)); break;
+      case 'pad_status':       data = withLock_(() => setPadStatus_(user, p)); break;
       case 'audit':            data = getAuditLog_(user, p); break;
       case 'upload_pdf':       data = uploadToDrive_(user, p); break;
       default: throw new AppError_('TINDAKAN_TIDAK_SAH', 'Tindakan tidak dibenarkan.');
@@ -511,37 +539,52 @@ function showReport_(tajuk, baris) {
 
 ;
 /**
- * Auth.gs — identiti pengguna (emel Google kerajaan), peranan, kebenaran dan pengurusan akaun.
+ * Auth.gs — identiti pengguna, peranan, kebenaran dan pengurusan akaun.
  *
- * Tiada kata laluan disimpan. Google mengesahkan siapa pengguna; sistem ini menentukan
- * apa yang pengguna itu boleh buat berdasarkan helaian PENGGUNA.
+ * Dua cara log masuk, satu kod:
+ *  1. Staf UPK  → emel Google kerajaan (dibaca di server melalui Session.getActiveUser()).
+ *  2. Kerani PAD → pilih daerah + kata laluan daerah + nama penuh. Server memberi token sesi
+ *     yang mesti disertakan pada setiap panggilan. Kata laluan disimpan sebagai hash bersalt
+ *     dalam Script Properties (bukan dalam Sheet).
  */
 
 const PERANAN = {
-  ADMIN_UPK:    { label: 'Admin UPK',     lihatSemua: true,  tulis: 'SEMUA',   urusPengguna: true,  audit: true,  lokasiHQ: true },
-  KERANI_UPK:   { label: 'Kerani UPK',    lihatSemua: true,  tulis: 'SENDIRI', urusPengguna: false, audit: false, lokasiHQ: true },
-  PEMANTAU_UPK: { label: 'Pemantau UPK',  lihatSemua: true,  tulis: 'TIADA',   urusPengguna: false, audit: false, lokasiHQ: true },
-  KERANI_PAD:   { label: 'Kerani PAD',    lihatSemua: false, tulis: 'SENDIRI', urusPengguna: false, audit: false, lokasiHQ: false },
-  PEGAWAI_PAD:  { label: 'Pegawai PAD',   lihatSemua: false, tulis: 'TIADA',   urusPengguna: false, audit: false, lokasiHQ: false }
+  ADMIN_UPK:    { label: 'Admin UPK',    lihatSemua: true,  tulis: 'SEMUA',   urusPengguna: true,  audit: true,  emel: true },
+  KERANI_UPK:   { label: 'Kerani UPK',   lihatSemua: true,  tulis: 'SENDIRI', urusPengguna: false, audit: false, emel: true },
+  PEMANTAU_UPK: { label: 'Pemantau UPK', lihatSemua: true,  tulis: 'TIADA',   urusPengguna: false, audit: false, emel: true },
+  KERANI_PAD:   { label: 'Kerani PAD',   lihatSemua: false, tulis: 'SENDIRI', urusPengguna: false, audit: false, emel: false }
 };
 const KOL_PENGGUNA = { emel: 1, nama: 2, jawatan: 3, peranan: 4, lokasi: 5, status: 6, aksesTerakhir: 7, diciptaOleh: 8, diciptaPada: 9, dikemaskiniOleh: 10, dikemaskiniPada: 11 };
+const PAD_CFG = {
+  HASH_ITERASI: 500,          // naikkan jika log masuk masih pantas; turunkan jika terlalu perlahan
+  MIN_PANJANG: 8,
+  GAGAL_MAKS: 5,              // cubaan salah sebelum daerah dikunci
+  KUNCI_SAAT: 15 * 60,        // tempoh kunci
+  SESI_REHAT_SAAT: 2 * 60 * 60,// sesi tamat jika tiada aktiviti 2 jam
+  SESI_MAKS_MS: 8 * 60 * 60 * 1000 // sesi tamat mutlak selepas 8 jam
+};
 
 // ---------------------------------------------------------------------------
 // Identiti
 // ---------------------------------------------------------------------------
+/** Tentukan pengguna bagi satu panggilan API. PAD guna token; UPK guna emel. */
+function resolveUser_(req) {
+  if (req.token) return padSessionUser_(req.token);
+  return currentUser_();
+}
+
 function currentUser_() {
   const emel = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
-  if (!emel) {
-    throw new AppError_('TIADA_EMEL', 'Sistem tidak dapat mengenal pasti akaun Google anda. Pastikan anda log masuk dengan emel jabatan, kemudian muat semula halaman.');
-  }
+  if (!emel) throw new AppError_('TIADA_EMEL', 'Sila log masuk.');
   const domain = String(getSettings_().konfig.DOMAIN_EMEL || '').trim().toLowerCase();
   if (domain && emel.split('@')[1] !== domain) {
-    throw new AppError_('DOMAIN_DITOLAK', 'Akaun ' + emel + ' bukan emel jabatan (@' + domain + '). Sila log masuk dengan emel kerajaan.');
+    throw new AppError_('DOMAIN_DITOLAK', 'Akaun ' + emel + ' bukan emel jabatan (@' + domain + ').');
   }
   const u = findUser_(emel);
-  if (!u) throw new AppError_('TIADA_AKSES', 'Emel ' + emel + ' belum didaftarkan dalam e-Stok. Sila hubungi Admin UPK untuk akses.');
+  if (!u) throw new AppError_('TIADA_AKSES', 'Emel ' + emel + ' belum didaftarkan dalam e-Stok.');
   if (u.status !== 'AKTIF') throw new AppError_('TIDAK_AKTIF', 'Akaun ' + emel + ' telah dinyahaktifkan. Sila hubungi Admin UPK.');
-  if (!PERANAN[u.peranan]) throw new AppError_('PERANAN_TIDAK_SAH', 'Peranan akaun anda tidak sah. Sila hubungi Admin UPK.');
+  if (!PERANAN[u.peranan] || !PERANAN[u.peranan].emel) throw new AppError_('PERANAN_TIDAK_SAH', 'Peranan akaun anda tidak sah. Sila hubungi Admin UPK.');
+  u.jenisAkaun = 'EMEL';
   return u;
 }
 
@@ -565,7 +608,7 @@ function readUsers_() {
 function findUser_(emel) { return readUsers_().find(u => u.emel === emel) || null; }
 
 function publicUser_(u) {
-  return { emel: u.emel, nama: u.nama, jawatan: u.jawatan, peranan: u.peranan, labelPeranan: PERANAN[u.peranan].label, lokasi: u.lokasi };
+  return { emel: u.emel, nama: u.nama, jawatan: u.jawatan || '', peranan: u.peranan, labelPeranan: PERANAN[u.peranan].label, lokasi: u.lokasi, jenisAkaun: u.jenisAkaun || 'EMEL' };
 }
 function systemUser_() {
   let emel = '';
@@ -601,13 +644,155 @@ function permissionsFor_(u) {
 }
 
 // ---------------------------------------------------------------------------
-// Pengurusan akaun (Admin UPK)
+// Akaun daerah (Kerani PAD)
+// ---------------------------------------------------------------------------
+function lokasiPad_() { return getSettings_().lokasi.slice(1); } // semua kecuali HQ
+function kodPad_(lokasi) {
+  const l = lokasiPad_().find(x => x.nama === lokasi);
+  if (!l) throw new AppError_('INPUT', 'Daerah tidak sah.');
+  return l.kod;
+}
+function padRecord_(kod) {
+  const raw = PropertiesService.getScriptProperties().getProperty('PAD_' + kod);
+  return raw ? JSON.parse(raw) : null;
+}
+function savePadRecord_(kod, rec) { PropertiesService.getScriptProperties().setProperty('PAD_' + kod, JSON.stringify(rec)); }
+
+function hashKataLaluan_(kata, salt) {
+  const props = PropertiesService.getScriptProperties();
+  let pepper = props.getProperty('PEPPER');
+  if (!pepper) { pepper = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('PEPPER', pepper); }
+  const hex = b => b.map(x => ((x + 256) % 256).toString(16)).map(x => (x.length < 2 ? '0' + x : x)).join('');
+  let h = hex(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + kata + '|' + pepper));
+  for (let i = 0; i < PAD_CFG.HASH_ITERASI; i++) h = hex(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + salt));
+  return h;
+}
+
+/** Senarai daerah untuk skrin log masuk (tiada maklumat sensitif). */
+function padLoginInfo_() {
+  return { daerah: lokasiPad_().map(l => { const r = padRecord_(l.kod); return { nama: l.nama, aktif: !!(r && r.aktif && r.hash) }; }) };
+}
+
+function loginPad_(p) {
+  const lokasi = clean_(p.lokasi);
+  const kod = kodPad_(lokasi);
+  const nama = clean_(p.nama, 80).replace(/\s+/g, ' ').toUpperCase();
+  if (nama.length < 5 || !/[A-Z]/.test(nama)) throw new AppError_('INPUT', 'Sila isi nama penuh anda.');
+  const cache = CacheService.getScriptCache();
+  if (cache.get('kunci_pad_' + kod)) {
+    throw new AppError_('DIKUNCI', 'Terlalu banyak cubaan salah bagi ' + lokasi + '. Cuba semula selepas 15 minit atau hubungi Admin UPK.');
+  }
+  const rec = padRecord_(kod);
+  if (!rec || !rec.hash) throw new AppError_('BELUM_DITETAPKAN', 'Kata laluan bagi ' + lokasi + ' belum ditetapkan. Sila hubungi Admin UPK.');
+  if (!rec.aktif) throw new AppError_('TIDAK_AKTIF', 'Akses ' + lokasi + ' sedang dinyahaktifkan. Sila hubungi Admin UPK.');
+
+  const pemohon = { emel: 'PAD-' + kod, nama: nama + ' (' + lokasi.replace('Daerah ', '') + ')', peranan: 'KERANI_PAD', lokasi: lokasi };
+  if (hashKataLaluan_(String(p.kataLaluan || ''), rec.salt) !== rec.hash) {
+    const gagal = Number(cache.get('gagal_pad_' + kod) || 0) + 1;
+    cache.put('gagal_pad_' + kod, String(gagal), PAD_CFG.KUNCI_SAAT);
+    let mesej = 'Kata laluan tidak sah.';
+    if (gagal >= PAD_CFG.GAGAL_MAKS) {
+      cache.put('kunci_pad_' + kod, '1', PAD_CFG.KUNCI_SAAT);
+      cache.remove('gagal_pad_' + kod);
+      mesej = 'Kata laluan tidak sah. ' + lokasi + ' dikunci selama 15 minit.';
+    }
+    writeAuditLog_(pemohon, 'LOGIN_PAD_GAGAL', 'AKAUN_PAD', pemohon.emel, null, null, 'Cubaan ' + gagal + ' oleh "' + nama + '"');
+    throw new AppError_('LOGIN_GAGAL', mesej);
+  }
+  cache.remove('gagal_pad_' + kod);
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  cache.put('sesi_' + token, JSON.stringify({ kod: kod, lokasi: lokasi, nama: pemohon.nama, versi: rec.versi || 1, mula: Date.now() }), PAD_CFG.SESI_REHAT_SAAT);
+  writeAuditLog_(pemohon, 'LOGIN_PAD', 'AKAUN_PAD', pemohon.emel, null, null, '');
+  return { token: token };
+}
+
+function padSessionUser_(token) {
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get('sesi_' + String(token));
+  if (!raw) throw new AppError_('SESI_TAMAT', 'Sesi anda telah tamat. Sila log masuk semula.');
+  const s = JSON.parse(raw);
+  const rec = padRecord_(s.kod);
+  // Kata laluan ditukar / akaun dinyahaktif / melebihi 8 jam → sesi tidak sah lagi
+  if (!rec || !rec.aktif || (rec.versi || 1) !== s.versi || Date.now() - s.mula > PAD_CFG.SESI_MAKS_MS) {
+    cache.remove('sesi_' + token);
+    throw new AppError_('SESI_TAMAT', 'Sesi anda telah tamat. Sila log masuk semula.');
+  }
+  cache.put('sesi_' + token, raw, PAD_CFG.SESI_REHAT_SAAT); // lanjut tempoh tanpa aktiviti
+  return { emel: 'PAD-' + s.kod, nama: s.nama, jawatan: '', peranan: 'KERANI_PAD', lokasi: s.lokasi, status: 'AKTIF', jenisAkaun: 'PAD', token: token };
+}
+
+function logoutPad_(token) {
+  if (token) CacheService.getScriptCache().remove('sesi_' + String(token));
+  return { ok: true };
+}
+
+/** Admin: status setiap akaun daerah. */
+function listPadAccounts_(admin) {
+  requireAdmin_(admin);
+  const cache = CacheService.getScriptCache();
+  return lokasiPad_().map(l => {
+    const r = padRecord_(l.kod) || {};
+    return { lokasi: l.nama, kod: l.kod, adaKataLaluan: !!r.hash, aktif: !!r.aktif, dikunci: !!cache.get('kunci_pad_' + l.kod),
+      dikemaskiniOleh: r.dikemaskiniOleh || '', dikemaskiniPada: r.dikemaskiniPada || '' };
+  });
+}
+
+/** Admin: tetapkan / tukar kata laluan daerah. Jika kosong, sistem jana kata laluan rawak. */
+function setPadPassword_(admin, p) {
+  requireAdmin_(admin);
+  const lokasi = clean_(p.lokasi);
+  const kod = kodPad_(lokasi);
+  let kata = String(p.kataLaluan || '').trim();
+  let dijana = false;
+  if (!kata) { kata = randomPassword_(10); dijana = true; }
+  if (kata.length < PAD_CFG.MIN_PANJANG || !/[A-Za-z]/.test(kata) || !/[0-9]/.test(kata)) {
+    throw new AppError_('INPUT', 'Kata laluan mesti sekurang-kurangnya ' + PAD_CFG.MIN_PANJANG + ' aksara dan mengandungi huruf serta nombor.');
+  }
+  const lama = padRecord_(kod) || {};
+  const salt = Utilities.getUuid();
+  savePadRecord_(kod, { hash: hashKataLaluan_(kata, salt), salt: salt, aktif: true, versi: (lama.versi || 0) + 1,
+    dikemaskiniOleh: admin.nama, dikemaskiniPada: nowStr_() });
+  CacheService.getScriptCache().remove('kunci_pad_' + kod);
+  writeAuditLog_(admin, 'KATA_LALUAN_PAD', 'AKAUN_PAD', 'PAD-' + kod, null, { lokasi: lokasi, status: 'AKTIF' },
+    lama.hash ? 'Kata laluan ditukar; semua sesi daerah ini ditamatkan' : 'Kata laluan pertama ditetapkan');
+  return { akaun: listPadAccounts_(admin), kataLaluan: dijana ? kata : null, lokasi: lokasi };
+}
+
+/** Admin: aktif / nyahaktif akses daerah (nyahaktif menamatkan semua sesi). */
+function setPadStatus_(admin, p) {
+  requireAdmin_(admin);
+  const lokasi = clean_(p.lokasi);
+  const kod = kodPad_(lokasi);
+  const rec = padRecord_(kod);
+  if (!rec || !rec.hash) throw new AppError_('INPUT', 'Tetapkan kata laluan dahulu.');
+  rec.aktif = !!p.aktif;
+  rec.versi = (rec.versi || 1) + 1;
+  rec.dikemaskiniOleh = admin.nama; rec.dikemaskiniPada = nowStr_();
+  savePadRecord_(kod, rec);
+  if (rec.aktif) CacheService.getScriptCache().remove('kunci_pad_' + kod);
+  writeAuditLog_(admin, 'STATUS_AKAUN_PAD', 'AKAUN_PAD', 'PAD-' + kod, null, { lokasi: lokasi, status: rec.aktif ? 'AKTIF' : 'TIDAK_AKTIF' }, '');
+  return { akaun: listPadAccounts_(admin) };
+}
+
+function randomPassword_(n) {
+  const abjad = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+  const nombor = '23456789';
+  const sumber = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+  let out = '';
+  for (let i = 0; out.length < n - 2; i += 2) out += abjad[parseInt(sumber.substr(i, 2), 16) % abjad.length];
+  out += nombor[parseInt(sumber.substr(40, 2), 16) % nombor.length] + nombor[parseInt(sumber.substr(44, 2), 16) % nombor.length];
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Pengurusan akaun emel (staf UPK) — Admin UPK
 // ---------------------------------------------------------------------------
 function listUsers_(admin) {
   requireAdmin_(admin);
   return {
     pengguna: readUsers_().map(u => { const x = Object.assign({}, u); delete x.baris; return x; }),
-    peranan: Object.keys(PERANAN).map(k => ({ kod: k, label: PERANAN[k].label, lokasiHQ: PERANAN[k].lokasiHQ }))
+    peranan: Object.keys(PERANAN).filter(k => PERANAN[k].emel).map(k => ({ kod: k, label: PERANAN[k].label })),
+    akaunPad: listPadAccounts_(admin)
   };
 }
 
@@ -620,12 +805,8 @@ function saveUser_(admin, p) {
   const nama = clean_(p.nama, 120);
   if (nama.length < 3) throw new AppError_('INPUT', 'Nama penuh diperlukan.');
   const peranan = clean_(p.peranan).toUpperCase();
-  if (!PERANAN[peranan]) throw new AppError_('INPUT', 'Peranan tidak sah.');
-  const hq = lokasiHQ_();
-  let lokasi = clean_(p.lokasi);
-  if (PERANAN[peranan].lokasiHQ) lokasi = hq;
-  if (getSettings_().lokasi.map(l => l.nama).indexOf(lokasi) < 0) throw new AppError_('INPUT', 'Lokasi tidak sah.');
-  if (!PERANAN[peranan].lokasiHQ && lokasi === hq) throw new AppError_('INPUT', 'Peranan PAD mesti ditetapkan kepada lokasi daerah, bukan HQ.');
+  if (!PERANAN[peranan] || !PERANAN[peranan].emel) throw new AppError_('INPUT', 'Peranan tidak sah. Kerani PAD log masuk dengan kata laluan daerah, bukan emel.');
+  const lokasi = lokasiHQ_(); // semua akaun emel ialah staf UPK
   const status = clean_(p.status || 'AKTIF').toUpperCase();
   if (['AKTIF', 'TIDAK_AKTIF'].indexOf(status) < 0) throw new AppError_('INPUT', 'Status tidak sah.');
 
@@ -634,8 +815,6 @@ function saveUser_(admin, p) {
   if (p.baru && sedia) throw new AppError_('INPUT', 'Emel ini sudah didaftarkan.');
   if (!p.baru && !sedia) throw new AppError_('INPUT', 'Akaun tidak dijumpai.');
 
-  // Elak sistem tanpa pentadbir: admin tidak boleh turunkan / nyahaktif diri sendiri,
-  // dan mesti kekal sekurang-kurangnya seorang Admin UPK aktif.
   if (sedia && sedia.emel === admin.emel && (peranan !== 'ADMIN_UPK' || status !== 'AKTIF')) {
     throw new AppError_('DILARANG', 'Anda tidak boleh menukar peranan atau menyahaktifkan akaun sendiri.');
   }
@@ -658,12 +837,12 @@ function saveUser_(admin, p) {
 }
 
 function logAccessOncePerDay_(u) {
-  const kunci = 'akses_' + u.emel + '_' + Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd');
+  const kunci = 'akses_' + u.emel + '_' + u.nama + '_' + Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd');
   const cache = CacheService.getScriptCache();
   if (cache.get(kunci)) return;
   cache.put(kunci, '1', 21600);
-  sheet_(SH.PENGGUNA).getRange(u.baris, KOL_PENGGUNA.aksesTerakhir).setValue(nowStr_());
-  writeAuditLog_(u, 'AKSES_SISTEM', 'PENGGUNA', u.emel, null, null, '');
+  if (u.baris) sheet_(SH.PENGGUNA).getRange(u.baris, KOL_PENGGUNA.aksesTerakhir).setValue(nowStr_());
+  writeAuditLog_(u, 'AKSES_SISTEM', u.jenisAkaun === 'PAD' ? 'AKAUN_PAD' : 'PENGGUNA', u.emel, null, null, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -691,7 +870,7 @@ function setupFirstAdmin() {
   return showReport_('Admin pertama didaftarkan', [
     emel + ' kini Admin UPK.',
     'Domain emel dikunci kepada: @' + emel.split('@')[1],
-    'Langkah seterusnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone within domain).'
+    'Seterusnya: buat DUA deployment Web app (lihat README_Pemasangan.md).'
   ]);
 }
 
@@ -1017,12 +1196,12 @@ function uploadToDrive_(u, p) {
 
   // ---------- Simpan / muat keadaan ----------
   function simpan() {
-    simpanLS(KUNCI, JSON.stringify({ props, sheets: ss.sheets.map(s => ({ name: s.name, data: s.data.map(r => r.map(v => v instanceof Date ? { __d: v.getTime() } : v)) })) }));
+    simpanLS(KUNCI, JSON.stringify({ props, cache, sheets: ss.sheets.map(s => ({ name: s.name, data: s.data.map(r => r.map(v => v instanceof Date ? { __d: v.getTime() } : v)) })) }));
   }
   function muat() {
     const raw = bacaLS(KUNCI); if (!raw) return false;
     try {
-      const o = JSON.parse(raw); props = o.props || {};
+      const o = JSON.parse(raw); props = o.props || {}; cache = o.cache || {};
       ss.sheets = o.sheets.map(x => { const s = new Sheet(x.name); s.data = x.data.map(r => r.map(v => v && typeof v === 'object' && '__d' in v ? new Date(v.__d) : v)); return s; });
       return true;
     } catch (e) { return false; }
@@ -1030,7 +1209,7 @@ function uploadToDrive_(u, p) {
 
   // ---------- Data contoh ----------
   function seed() {
-    ss.sheets = []; props = {};
+    ss.sheets = []; props = {}; cache = {};
     const tx = ss.insertSheet('TRANSAKSI');
     const kini = new Date();
     const t = (bulanLalu, hari) => { const d = new Date(kini.getFullYear(), kini.getMonth() - bulanLalu, hari); return d > kini ? new Date(kini.getFullYear(), kini.getMonth(), Math.max(1, kini.getDate() - 1)) : d; };
@@ -1046,11 +1225,12 @@ function uploadToDrive_(u, p) {
     GAS.setupV3();
     GAS.setupFirstAdmin();
     const A = PENGGUNA_DEMO[0].emel, KU = PENGGUNA_DEMO[1].emel;
-    const panggil = (emel, action, payload) => { env.emel = emel; const r = JSON.parse(GAS.api(JSON.stringify({ action, payload }))); if (!r.ok) console_.warn('seed:', action, r.mesej); return r.data; };
+    const panggil = (emel, action, payload, token) => { env.emel = emel; const r = JSON.parse(GAS.api(JSON.stringify({ action, payload, token }))); if (!r.ok) console_.warn('seed:', action, r.mesej); return r.data; };
     const iso = d => fmtDate(d, '', 'yyyy-MM-dd');
     panggil(A, 'pengguna_simpan', Object.assign({}, PENGGUNA_DEMO[0], { status: 'AKTIF' }));
     PENGGUNA_DEMO.slice(1).forEach(u => panggil(A, 'pengguna_simpan', Object.assign({ baru: true }, u)));
     const PAD = ['Daerah Seberang Perai Tengah', 'Daerah Seberang Perai Selatan', 'Daerah Barat Daya', 'Daerah SPU (Butterworth)', 'Daerah SPU (Kepala Batas)', 'Daerah Timur Laut'];
+    PAD.forEach(l => panggil(A, 'pad_tetapkan', { lokasi: l, kataLaluan: KATA_DEMO }));
     PAD.forEach((l, k) => ['Sijil', 'Buku Gerbang Perkahwinan', 'Beg', 'Pen', 'Buku Nota'].forEach(it =>
       panggil(KU, 'pindahan', { tarikh: iso(t(2, 2 + k)), lokasi: 'UPK BUUKI (HQ)', lokasiPenerima: l, item: it, kuantiti: 260 + k * 10, rujukan: 'PDH/' + (k + 1) + '/2026' })));
     PAD.forEach((l, k) => ['Sijil', 'Buku Gerbang Perkahwinan', 'Beg', 'Pen'].forEach(it =>
@@ -1059,14 +1239,17 @@ function uploadToDrive_(u, p) {
       panggil(A, 'tambah', { tarikh: iso(t(0, 2 + k)), lokasi: l, item: it, jenis: 'Pengeluaran Kursus', kuantiti: 70 + k * 9, siriKursus: 'Siri ' + (20 + k) + '/2026', jumlahPeserta: 70 + k * 9 })));
     panggil(KU, 'tambah', { tarikh: iso(t(0, 3)), lokasi: 'UPK BUUKI (HQ)', item: 'Mineral (Karton)', jenis: 'Pengeluaran Kursus', kuantiti: 54, siriKursus: 'Siri 19/2026', jumlahPeserta: 160 });
     panggil(KU, 'tambah', { tarikh: iso(t(0, 3)), lokasi: 'UPK BUUKI (HQ)', item: 'Kertas A4 (Kotak)', jenis: 'Terima Pembekal', kuantiti: 2, rujukan: 'PO-2026-077' });
-    const d = panggil(PENGGUNA_DEMO[3].emel, 'tambah', { tarikh: iso(t(0, 1)), lokasi: 'Daerah Barat Daya', item: 'Beg', jenis: 'Pelarasan (-)', kuantiti: 6, catatan: 'Beg koyak semasa penghantaran' });
+    const tokBD = panggil('', 'login_pad', { lokasi: 'Daerah Barat Daya', kataLaluan: KATA_DEMO, nama: 'Siti Aminah binti Yusof' }).token;
+    const d = panggil('', 'tambah', { tarikh: iso(t(0, 1)), lokasi: 'Daerah Barat Daya', item: 'Beg', jenis: 'Pelarasan (-)', kuantiti: 6, catatan: 'Beg koyak semasa penghantaran' }, tokBD);
     const salah = d && d.transaksi.find(x => x.catatan === 'Beg koyak semasa penghantaran');
-    if (salah) panggil(PENGGUNA_DEMO[3].emel, 'batal', { id: salah.id, sebab: 'Rekod berganda, telah direkod oleh rakan sekerja' });
+    if (salah) panggil('', 'batal', { id: salah.id, sebab: 'Rekod berganda, telah direkod oleh rakan sekerja' }, tokBD);
+    panggil('', 'logout_pad', {}, tokBD);
     simpan();
   }
 
   if (!muat()) seed();
-  env.emel = bacaSS('estok_demo_emel') || PENGGUNA_DEMO[0].emel;
+  const pilihan = bacaSS('estok_demo_emel');
+  env.emel = pilihan === null ? PENGGUNA_DEMO[0].emel : pilihan; // '' = Kerani PAD (tiada emel)
 
   // ---------- google.script.run tiruan ----------
   function runner(ok, fail) {
@@ -1081,8 +1264,8 @@ function uploadToDrive_(u, p) {
   window.google = { script: { run: runner(null, null) } };
 
   // ---------- Panel demo ----------
-  window.__estokDemo = { PENGGUNA_DEMO, TIDAK_BERDAFTAR,
-    tukar: (emel) => { simpanSS('estok_demo_emel', emel); location.reload(); },
+  window.__estokDemo = { PENGGUNA_DEMO, KATA_DEMO,
+    tukar: (emel) => { simpanSS('estok_demo_emel', emel); try { sessionStorage.removeItem('estok_pad_token'); } catch (e) {} location.reload(); },
     reset: () => { try { localStorage.removeItem(KUNCI); } catch (e) {} location.reload(); },
     semasa: () => env.emel };
 })();
@@ -1106,10 +1289,15 @@ function uploadToDrive_(u, p) {
     const {
       Package, ArrowRightLeft, FileText, PlusCircle, MapPin, LayoutDashboard, Search, RefreshCw, Loader2, Ban,
       AlertCircle, Download, ShieldCheck, History, AlertTriangle, TrendingUp, TrendingDown, Boxes, CheckCircle2,
-      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye, Menu, Bell, X, ChevronRight
+      Lock, Users, ExternalLink, Pencil: Edit, Printer, UserPlus, Eye, Menu, Bell, X, ChevronRight, LogOut, LogIn, KeyRound, Copy, Building2
     } = LucideReact;
 
     // ===================== SAMBUNGAN SERVER =====================
+    // Token sesi Kerani PAD (staf UPK tidak memerlukan token: emel dibaca oleh server)
+    let TOKEN = null;
+    try { TOKEN = sessionStorage.getItem('estok_pad_token'); } catch (e) {}
+    function setToken(t) { TOKEN = t || null; try { t ? sessionStorage.setItem('estok_pad_token', t) : sessionStorage.removeItem('estok_pad_token'); } catch (e) {} }
+
     function api(action, payload = {}) {
       return new Promise((resolve, reject) => {
         if (!window.google || !google.script || !google.script.run) {
@@ -1118,10 +1306,11 @@ function uploadToDrive_(u, p) {
         google.script.run
           .withSuccessHandler(s => {
             let r; try { r = JSON.parse(s); } catch (e) { return reject(new Error('Respons server tidak sah.')); }
+            if (!r.ok && r.kod === 'SESI_TAMAT' && action !== 'bootstrap') window.dispatchEvent(new CustomEvent('estok-sesi-tamat', { detail: r.mesej }));
             r.ok ? resolve(r.data) : reject(Object.assign(new Error(r.mesej), { kod: r.kod }));
           })
           .withFailureHandler(e => reject(Object.assign(new Error((e && e.message) || 'Sambungan ke server gagal. Semak internet anda.'), { kod: 'RANGKAIAN' })))
-          .api(JSON.stringify({ action, payload }));
+          .api(JSON.stringify({ action, payload, token: TOKEN }));
       });
     }
 
@@ -1222,17 +1411,32 @@ function uploadToDrive_(u, p) {
         finally { setMemuat(false); }
       }, []);
 
-      useEffect(() => {
+      const [perluLogin, setPerluLogin] = useState(null); // { mesej } → papar skrin log masuk PAD
+      const mulakan = useCallback(() => {
+        setRalatBoot(null);
         api('bootstrap').then(b => {
-          setBoot(b);
+          setPerluLogin(null); setBoot(b); setTab('dashboard');
           setLokasiPilihan(b.kebenaran.lihatSemua ? 'SEMUA' : b.pengguna.lokasi);
           muatData();
-        }).catch(e => setRalatBoot(e));
+        }).catch(e => {
+          if (['TIADA_EMEL', 'TIADA_AKSES', 'DOMAIN_DITOLAK', 'SESI_TAMAT'].includes(e.kod)) { setToken(null); setPerluLogin({ mesej: e.kod === 'SESI_TAMAT' ? e.message : '' }); }
+          else setRalatBoot(e);
+        });
       }, []);
+      useEffect(() => { mulakan(); }, []);
+      useEffect(() => {
+        const h = (ev) => { setToken(null); setBoot(null); setTransaksi([]); setDialog(null); setPerluLogin({ mesej: ev.detail || 'Sesi anda telah tamat. Sila log masuk semula.' }); };
+        window.addEventListener('estok-sesi-tamat', h); return () => window.removeEventListener('estok-sesi-tamat', h);
+      }, []);
+      const logKeluar = () => setDialog({ tajuk: 'Log keluar', mesej: 'Log keluar daripada e-Stok?', labelYa: 'Log keluar', onYa: async () => {
+        try { await api('logout_pad'); } catch (e) {}
+        setToken(null); setBoot(null); setTransaksi([]); setDialog(null); setPerluLogin({ mesej: '' });
+      } });
 
       const dataLokasi = useMemo(() => lokasiPilihan === 'SEMUA' ? transaksi : transaksi.filter(t => t.lokasi === lokasiPilihan), [transaksi, lokasiPilihan]);
       const amaran = useMemo(() => boot ? kiraAmaran(transaksi, boot.tetapan.items, lokasiPilihan === 'SEMUA' ? boot.kebenaran.lokasiDilihat : [lokasiPilihan]) : [], [transaksi, boot, lokasiPilihan]);
 
+      if (perluLogin) return <SkrinLoginPad mesejAwal={perluLogin.mesej} onBerjaya={() => { setPerluLogin(null); mulakan(); }} />;
       if (ralatBoot) return <SkrinTiadaAkses ralat={ralatBoot} />;
       if (!boot) return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm gap-2 bg-[#eef2f8]"><Loader2 className="w-5 h-5 animate-spin" /> Mengesahkan akaun…</div>;
 
@@ -1248,7 +1452,7 @@ function uploadToDrive_(u, p) {
       const hantarCari = (e) => { e.preventDefault(); setCariHantar(c => ({ q: cariGlobal, n: c.n + 1 })); pilihTab('transaksi'); };
       const hariIni = boot.hariIni || hariIniLokal();
       const k = { pengguna, kebenaran, tetapan, hariIni, transaksi, dataLokasi, lokasiPilihan, amaran, muatData, terimaData, paparMesej, paparToast, setDialog, pilihTab, cariHantar };
-      const panggilan = pengguna.nama.replace(/^(En\.|Encik|Puan|Pn\.|Cik|Ustaz|Ustazah|Dr\.|Tuan)\s+/i, '').split(/\s+(bin|binti|bt|b\.)\s+/i)[0];
+      const panggilan = pengguna.nama.replace(/\s*\([^)]*\)\s*$/, '').replace(/^(En\.|Encik|Puan|Pn\.|Cik|Ustaz|Ustazah|Dr\.|Tuan)\s+/i, '').split(/\s+(bin|binti|bt|b\.)\s+/i)[0];
       const inisial = panggilan.split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase();
       const tajukTab = menu.find(m => m.id === tab)?.label;
 
@@ -1271,6 +1475,7 @@ function uploadToDrive_(u, p) {
             <div className="flex items-center gap-1.5 font-semibold text-white">{pengguna.peranan === 'ADMIN_UPK' && <ShieldCheck className="w-3.5 h-3.5" />}{pengguna.labelPeranan}</div>
             <div className="mt-0.5 text-blue-100/80 truncate">{pengguna.lokasi}</div>
             <div className="mt-2 text-blue-100/60">Versi {boot.versi}</div>
+            {pengguna.jenisAkaun === 'PAD' && <button onClick={logKeluar} className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg bg-white/15 hover:bg-white/25 py-2 text-xs font-semibold text-white"><LogOut className="w-3.5 h-3.5" />Log keluar</button>}
           </div>
         </div>
       );
@@ -1302,6 +1507,7 @@ function uploadToDrive_(u, p) {
                 </div>
                 <button onClick={muatData} disabled={memuat} title={dibacaPada ? `Data setakat ${dibacaPada.slice(11, 16)}` : 'Segar semula'} className="p-2 rounded-full text-slate-500 hover:bg-slate-100"><RefreshCw className={`w-[18px] h-[18px] ${memuat ? 'animate-spin text-brand-600' : ''}`} /></button>
                 <button onClick={() => pilihTab('dashboard')} title={`${amaran.length} amaran stok`} className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100"><Bell className="w-[18px] h-[18px]" />{amaran.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
+                {pengguna.jenisAkaun === 'PAD' && <button onClick={logKeluar} title="Log keluar" className="p-2 rounded-full text-slate-500 hover:bg-red-50 hover:text-red-600"><LogOut className="w-[18px] h-[18px]" /></button>}
                 <div className="flex items-center gap-2.5 pl-1 md:pl-2 md:border-l md:border-slate-200">
                   <div className="w-9 h-9 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{inisial}</div>
                   <div className="hidden sm:block leading-tight min-w-0"><div className="text-sm font-semibold text-slate-800 truncate max-w-[190px]">Hai, {panggilan}</div><div className="text-[11px] text-slate-500">{fmtTarikh(hariIni)}</div></div>
@@ -1809,67 +2015,184 @@ function uploadToDrive_(u, p) {
       );
     }
 
+    // ===================== LOG MASUK PAD =====================
+    function SkrinLoginPad({ mesejAwal, onBerjaya }) {
+      const [daerah, setDaerah] = useState(null);
+      const [lokasi, setLokasi] = useState('');
+      const [nama, setNama] = useState('');
+      const [kata, setKata] = useState('');
+      const [lihat, setLihat] = useState(false);
+      const [ralat, setRalat] = useState(mesejAwal || '');
+      const [proses, setProses] = useState(false);
+      useEffect(() => { api('info_login').then(d => setDaerah(d.daerah)).catch(e => { setRalat(e.message); setDaerah([]); }); }, []);
+      const hantar = async (e) => {
+        e.preventDefault(); setRalat('');
+        if (!lokasi) return setRalat('Sila pilih daerah.');
+        if (nama.trim().length < 5) return setRalat('Sila isi nama penuh anda.');
+        setProses(true);
+        try { const r = await api('login_pad', { lokasi, nama, kataLaluan: kata }); setToken(r.token); onBerjaya(); }
+        catch (err) { setRalat(err.message); setKata(''); }
+        finally { setProses(false); }
+      };
+      return (
+        <div className="min-h-screen grid lg:grid-cols-[1.1fr_1fr] bg-[#eef2f8]">
+          <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#1f5fb0] to-[#173f7c] text-white p-12">
+            <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-white/15 ring-1 ring-white/25 flex items-center justify-center"><Package className="w-6 h-6" /></div><div><div className="font-bold">e-Stok JHEAIPP</div><div className="text-xs text-blue-100/80">Inventori Bersepadu UPK & PAD</div></div></div>
+            <div>
+              <h1 className="text-3xl font-bold leading-tight">Rekod stok kursus praperkahwinan<br />Pejabat Agama Daerah</h1>
+              <p className="mt-4 text-blue-100/85 max-w-md text-sm leading-relaxed">Rekod pengeluaran kursus, terima stok dan semak baki daerah anda. Setiap transaksi direkod bersama nama anda untuk tujuan audit jabatan.</p>
+            </div>
+            <div className="text-xs text-blue-100/60">Unit Pembangunan Keluarga · BUUKI · JHEAIPP</div>
+          </div>
+          <div className="flex items-center justify-center p-5">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm ring-1 ring-slate-200/70 p-6 md:p-7">
+              <div className="lg:hidden flex items-center gap-2.5 mb-5"><div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center"><Package className="w-5 h-5" /></div><div className="font-bold text-slate-900">e-Stok JHEAIPP</div></div>
+              <h2 className="text-xl font-bold text-slate-900">Log masuk PAD</h2>
+              <p className="text-sm text-slate-500 mb-5">Guna kata laluan daerah yang diberi oleh UPK.</p>
+              <form onSubmit={hantar} className="space-y-3.5">
+                <Medan label="Daerah">
+                  <div className="relative"><Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <select className={`${inputCls} pl-9 py-2.5`} value={lokasi} onChange={e => setLokasi(e.target.value)} disabled={!daerah}>
+                      <option value="">{daerah ? 'Pilih daerah' : 'Memuatkan…'}</option>
+                      {(daerah || []).map(d => <option key={d.nama} value={d.nama} disabled={!d.aktif}>{d.nama}{d.aktif ? '' : ' (belum aktif)'}</option>)}
+                    </select></div>
+                </Medan>
+                <Medan label="Nama penuh anda" nota="Nama ini direkod pada setiap transaksi yang anda buat.">
+                  <input className={`${inputCls} py-2.5`} autoComplete="name" placeholder="Cth: Siti Aminah binti Yusof" value={nama} onChange={e => setNama(e.target.value)} />
+                </Medan>
+                <Medan label="Kata laluan daerah">
+                  <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input type={lihat ? 'text' : 'password'} autoComplete="current-password" className={`${inputCls} pl-9 pr-16 py-2.5`} value={kata} onChange={e => setKata(e.target.value)} required />
+                    <button type="button" onClick={() => setLihat(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 px-2 py-1 rounded hover:bg-slate-100">{lihat ? 'Sorok' : 'Papar'}</button></div>
+                </Medan>
+                {ralat && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 ring-1 ring-red-200 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{ralat}</div>}
+                <Butang type="submit" className="w-full py-2.5" disabled={proses || !daerah}>{proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}Log masuk</Butang>
+              </form>
+              <p className="text-[11px] text-slate-500 mt-5 leading-relaxed">Jangan kongsi kata laluan dengan pihak luar. Akaun dikunci 15 minit selepas 5 cubaan salah. Staf UPK: guna pautan UPK dan log masuk dengan emel jabatan.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // ===================== PENGGUNA (ADMIN UPK) =====================
-    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast }) {
+    function Pengguna({ pengguna: saya, tetapan, paparMesej, paparToast, setDialog }) {
       const [data, setData] = useState(null);
       const [borang, setBorang] = useState(null);
+      const [padBorang, setPadBorang] = useState(null);
+      const [kataBaru, setKataBaru] = useState(null);
       const [simpan, setSimpan] = useState(false);
       const [cari, setCari] = useState('');
       useEffect(() => { api('pengguna_senarai').then(setData).catch(e => paparMesej(e.message)); }, []);
       const peranan = data ? data.peranan : [];
-      const infoPeranan = (kod) => peranan.find(p => p.kod === kod) || {};
-      const hq = tetapan.lokasi[0].nama;
-      const baru = () => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_PAD', lokasi: tetapan.lokasi[1] ? tetapan.lokasi[1].nama : hq, status: 'AKTIF' });
-      const set = (k) => (e) => setBorang(b => { const n = { ...b, [k]: e.target.value }; if (k === 'peranan') n.lokasi = infoPeranan(n.peranan).lokasiHQ ? hq : (n.lokasi === hq ? tetapan.lokasi[1].nama : n.lokasi); return n; });
+      const labelPeranan = (kod) => (peranan.find(p => p.kod === kod) || {}).label || kod;
+      const set = (k) => (e) => setBorang(b => ({ ...b, [k]: e.target.value }));
       const hantar = async (e) => {
         e.preventDefault(); setSimpan(true);
         try { setData(await api('pengguna_simpan', borang)); paparToast(borang.baru ? 'Pengguna didaftarkan' : 'Akaun dikemaskini'); setBorang(null); }
         catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
       };
+      const tetapkanPad = async (e) => {
+        e.preventDefault(); setSimpan(true);
+        try {
+          const r = await api('pad_tetapkan', { lokasi: padBorang.lokasi, kataLaluan: padBorang.jana ? '' : padBorang.kataLaluan });
+          setData(d => ({ ...d, akaunPad: r.akaun })); setPadBorang(null);
+          if (r.kataLaluan) setKataBaru({ lokasi: r.lokasi, kata: r.kataLaluan }); else paparToast('Kata laluan ' + r.lokasi + ' ditetapkan');
+        } catch (err) { paparMesej(err.message, 'Tidak disimpan'); } finally { setSimpan(false); }
+      };
+      const tukarStatusPad = (a) => setDialog({
+        tajuk: a.aktif ? 'Nyahaktif akses daerah' : 'Aktifkan akses daerah', bahaya: a.aktif, labelYa: a.aktif ? 'Nyahaktif' : 'Aktifkan',
+        mesej: a.aktif ? `Kerani ${a.lokasi} tidak akan dapat log masuk, dan sesi yang sedang berjalan akan ditamatkan serta-merta.` : `Kerani ${a.lokasi} boleh log masuk semula dengan kata laluan sedia ada.`,
+        onYa: async () => { try { const r = await api('pad_status', { lokasi: a.lokasi, aktif: !a.aktif }); setData(d => ({ ...d, akaunPad: r.akaun })); setDialog(null); paparToast('Status dikemaskini'); } catch (e) { paparMesej(e.message, 'Gagal'); } }
+      });
       if (!data) return <div className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
       const q = cari.toLowerCase();
-      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.lokasi, u.jawatan].join(' ').toLowerCase().includes(q));
+      const senarai = data.pengguna.filter(u => !q || [u.nama, u.emel, u.jawatan].join(' ').toLowerCase().includes(q));
       const diriSendiri = borang && !borang.baru && borang.emel === saya.emel;
+      const statusPad = (a) => !a.adaKataLaluan ? { t: 'Belum ditetapkan', c: 'bg-slate-100 text-slate-600 ring-slate-200' } : a.dikunci ? { t: 'Dikunci 15 min', c: 'bg-amber-50 text-amber-800 ring-amber-200' } : a.aktif ? { t: 'Aktif', c: 'bg-emerald-50 text-emerald-800 ring-emerald-200' } : { t: 'Tidak aktif', c: 'bg-red-50 text-red-700 ring-red-200' };
+      const th = 'text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-3 md:px-4 py-2.5';
       return (
-        <div className="grid lg:grid-cols-12 gap-5 [&>*]:min-w-0">
-          <Kad className="lg:col-span-8" title={`Pengguna Berdaftar (${data.pengguna.length})`} actions={<Butang onClick={baru} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar pengguna</Butang>}>
-            <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama, emel atau lokasi…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+        <div className="space-y-5">
+          <Kad title={<span className="flex items-center gap-2"><Building2 className="w-4 h-4 text-brand-600" />Akaun Daerah (Kerani PAD)</span>} actions={<span className="text-[11px] text-slate-500 hidden sm:inline">Satu kata laluan bagi setiap daerah</span>}>
             <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide"><tr><th className="text-left font-semibold px-3 md:px-4 py-2.5">Pengguna</th><th className="text-left font-semibold px-3 py-2.5">Peranan & lokasi</th><th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
-              <tbody className="divide-y divide-slate-100">{senarai.map(u => (
-                <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
-                  <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
-                  <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-emas-100 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{infoPeranan(u.peranan).label || u.peranan}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div><div className="text-[11px] text-slate-500 mt-1">{u.lokasi}</div></td>
-                  <td className="px-3 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
-                  <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+              <thead className="bg-slate-50/80"><tr><th className={th}>Daerah</th><th className={th}>Status</th><th className={`${th} hidden md:table-cell`}>Kemaskini terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+              <tbody className="divide-y divide-slate-100">{data.akaunPad.map(a => { const st = statusPad(a); return (
+                <tr key={a.kod}>
+                  <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{a.lokasi}</div><div className="text-[11px] text-slate-500 md:hidden">{a.dikemaskiniPada ? fmtMasa(a.dikemaskiniPada) : ''}</div></td>
+                  <td className="px-3 md:px-4 py-2.5"><Lencana cls={st.c}>{st.t}</Lencana></td>
+                  <td className="px-3 md:px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell">{a.dikemaskiniPada ? `${fmtMasa(a.dikemaskiniPada)} · ${a.dikemaskiniOleh}` : '—'}</td>
+                  <td className="px-3 py-2.5"><div className="flex justify-end gap-1.5">
+                    <Butang varian="garis" className="py-1.5 px-2.5 text-xs" onClick={() => setPadBorang({ lokasi: a.lokasi, kataLaluan: '', jana: true, ada: a.adaKataLaluan })}><KeyRound className="w-3.5 h-3.5" /><span className="hidden sm:inline">{a.adaKataLaluan ? 'Tukar' : 'Tetapkan'}</span></Butang>
+                    {a.adaKataLaluan && <Butang varian="garis" className="py-1.5 px-2.5 text-xs" onClick={() => tukarStatusPad(a)}>{a.aktif ? 'Nyahaktif' : 'Aktifkan'}</Butang>}
+                  </div></td>
                 </tr>
-              ))}</tbody>
+              ); })}</tbody>
             </table></div>
+            <p className="px-4 py-2.5 text-[11px] text-slate-500 border-t border-slate-100">Tukar kata laluan bila kerani bertukar atau sekurang-kurangnya setiap 3–6 bulan. Menukar kata laluan atau menyahaktif daerah akan menamatkan semua sesi daerah tersebut serta-merta.</p>
           </Kad>
-          <div className="lg:col-span-4 space-y-4">
-            {borang ? (
-              <Kad title={borang.baru ? 'Daftar Pengguna' : 'Kemaskini Akaun'}>
-                <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
-                  <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}. Pengguna log masuk dengan akaun Google ini.` : 'Emel tidak boleh diubah. Daftar akaun baharu jika emel bertukar.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
-                  <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
-                  <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
-                  <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
-                  <Medan label="Lokasi" nota={infoPeranan(borang.peranan).lokasiHQ ? 'Peranan UPK sentiasa di HQ.' : null}><select className={inputCls} value={borang.lokasi} onChange={set('lokasi')} disabled={simpan || infoPeranan(borang.peranan).lokasiHQ}>{tetapan.lokasi.filter(l => infoPeranan(borang.peranan).lokasiHQ ? l.nama === hq : l.nama !== hq).map(l => <option key={l.nama}>{l.nama}</option>)}</select></Medan>
-                  <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
-                  {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
-                  <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
-                </form>
-              </Kad>
-            ) : (
-              <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
-                <li><b className="text-slate-800">Admin UPK</b>: kawalan penuh, urus pengguna, jejak audit, paksa baki.</li>
-                <li><b className="text-slate-800">Kerani UPK</b>: rekod stok HQ & pindahan ke PAD, lihat semua lokasi.</li>
-                <li><b className="text-slate-800">Pemantau UPK</b>: lihat data & laporan seluruh negeri.</li>
-                <li><b className="text-slate-800">Kerani PAD</b>: rekod & urus stok daerah sendiri.</li>
-                <li><b className="text-slate-800">Pegawai PAD</b>: semak & pantau daerah sendiri.</li>
-              </ul></Kad>
-            )}
+
+          <div className="grid lg:grid-cols-12 gap-5 [&>*]:min-w-0">
+            <Kad className="lg:col-span-8" title={`Staf UPK (log masuk emel) · ${data.pengguna.length}`} actions={<Butang onClick={() => setBorang({ baru: true, emel: '', nama: '', jawatan: '', peranan: 'KERANI_UPK', status: 'AKTIF' })} className="py-1.5 text-xs"><UserPlus className="w-3.5 h-3.5" />Daftar staf</Butang>}>
+              <div className="p-3 border-b border-slate-100"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input className={`${inputCls} pl-8 py-1.5`} placeholder="Cari nama atau emel…" value={cari} onChange={e => setCari(e.target.value)} /></div></div>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="bg-slate-50/80"><tr><th className={th}>Staf</th><th className={th}>Peranan</th><th className={`${th} hidden md:table-cell`}>Akses terakhir</th><th className="px-3 py-2.5"></th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{senarai.map(u => (
+                  <tr key={u.emel} className={`align-top ${u.status !== 'AKTIF' ? 'opacity-60' : ''}`}>
+                    <td className="px-3 md:px-4 py-2.5"><div className="font-semibold text-slate-800">{u.nama}</div><div className="text-[11px] text-slate-500 break-all">{u.emel}</div>{u.jawatan && <div className="text-[11px] text-slate-500">{u.jawatan}</div>}</td>
+                    <td className="px-3 md:px-4 py-2.5"><div className="flex flex-wrap gap-1.5"><Lencana cls={u.peranan === 'ADMIN_UPK' ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}>{labelPeranan(u.peranan)}</Lencana>{u.status !== 'AKTIF' && <Lencana cls="bg-red-50 text-red-700 ring-red-200">Tidak aktif</Lencana>}</div></td>
+                    <td className="px-3 md:px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell whitespace-nowrap">{u.aksesTerakhir ? fmtMasa(u.aksesTerakhir) : 'Belum pernah'}</td>
+                    <td className="px-3 py-2.5 text-right"><button onClick={() => setBorang({ ...u, baru: false })} className="p-1.5 rounded-md text-blue-700 hover:bg-blue-50 ring-1 ring-blue-200" title="Kemaskini"><Edit className="w-3.5 h-3.5" /></button></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </Kad>
+            <div className="lg:col-span-4">
+              {borang ? (
+                <Kad title={borang.baru ? 'Daftar Staf UPK' : 'Kemaskini Akaun'}>
+                  <form onSubmit={hantar} className="p-5 grid grid-cols-2 gap-3.5">
+                    <Medan label="Emel kerajaan" nota={borang.baru ? `Mesti emel @${tetapan.konfig.DOMAIN_EMEL || 'domain jabatan'}.` : 'Emel tidak boleh diubah.'}><input type="email" required className={inputCls} value={borang.emel} onChange={set('emel')} disabled={!borang.baru || simpan} /></Medan>
+                    <Medan label="Nama penuh"><input required className={inputCls} value={borang.nama} onChange={set('nama')} disabled={simpan} /></Medan>
+                    <Medan label="Jawatan"><input className={inputCls} value={borang.jawatan} onChange={set('jawatan')} placeholder="Cth: Pembantu Tadbir (P/O)" disabled={simpan} /></Medan>
+                    <Medan label="Peranan"><select className={inputCls} value={borang.peranan} onChange={set('peranan')} disabled={simpan || diriSendiri}>{peranan.map(p => <option key={p.kod} value={p.kod}>{p.label}</option>)}</select></Medan>
+                    <Medan label="Status"><select className={inputCls} value={borang.status} onChange={set('status')} disabled={simpan || diriSendiri}><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF">Tidak aktif (sekat akses)</option></select></Medan>
+                    {diriSendiri && <p className="col-span-2 text-[11px] text-slate-500">Anda tidak boleh menukar peranan atau status akaun sendiri.</p>}
+                    <div className="col-span-2 flex gap-2"><Butang type="submit" className="flex-1" disabled={simpan}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang><Butang type="button" varian="lembut" onClick={() => setBorang(null)}>Batal</Butang></div>
+                  </form>
+                </Kad>
+              ) : (
+                <Kad title="Peranan Sistem"><ul className="p-4 space-y-2.5 text-xs text-slate-600">
+                  <li><b className="text-slate-800">Admin UPK</b> (emel): kawalan penuh, urus akaun, kata laluan daerah, jejak audit.</li>
+                  <li><b className="text-slate-800">Kerani UPK</b> (emel): rekod stok HQ dan pindahan ke PAD; lihat semua lokasi.</li>
+                  <li><b className="text-slate-800">Pemantau UPK</b> (emel): lihat data dan laporan seluruh negeri.</li>
+                  <li><b className="text-slate-800">Kerani PAD</b> (kata laluan daerah + nama): rekod dan urus stok daerah sendiri.</li>
+                </ul></Kad>
+              )}
+            </div>
           </div>
+
+          {padBorang && (
+            <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4" onClick={() => !simpan && setPadBorang(null)}>
+              <form onSubmit={tetapkanPad} className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2.5"><KeyRound className="w-5 h-5 text-brand-600" /><h3 className="text-base font-bold text-slate-900">{padBorang.ada ? 'Tukar' : 'Tetapkan'} kata laluan · {padBorang.lokasi}</h3></div>
+                {padBorang.ada && <p className="text-sm text-amber-800 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-3 py-2">Kerani daerah ini yang sedang log masuk akan dilog keluar serta-merta.</p>}
+                <label className="flex items-start gap-2.5 text-sm cursor-pointer"><input type="radio" className="mt-1" checked={padBorang.jana} onChange={() => setPadBorang(b => ({ ...b, jana: true }))} /><span><b>Jana automatik</b> <span className="text-slate-500">(disyorkan) kata laluan rawak 10 aksara dipaparkan sekali sahaja</span></span></label>
+                <label className="flex items-start gap-2.5 text-sm cursor-pointer"><input type="radio" className="mt-1" checked={!padBorang.jana} onChange={() => setPadBorang(b => ({ ...b, jana: false }))} /><span><b>Taip sendiri</b> <span className="text-slate-500">minimum 8 aksara, ada huruf dan nombor</span></span></label>
+                {!padBorang.jana && <input className={inputCls} autoFocus value={padBorang.kataLaluan} onChange={e => setPadBorang(b => ({ ...b, kataLaluan: e.target.value }))} placeholder="Kata laluan baharu" />}
+                <div className="flex justify-end gap-2"><Butang type="button" varian="lembut" onClick={() => setPadBorang(null)} disabled={simpan}>Batal</Butang><Butang type="submit" disabled={simpan || (!padBorang.jana && padBorang.kataLaluan.length < 8)}>{simpan && <Loader2 className="w-4 h-4 animate-spin" />}Simpan</Butang></div>
+              </form>
+            </div>
+          )}
+          {kataBaru && (
+            <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full">
+                <div className="flex items-center gap-2.5 mb-2"><CheckCircle2 className="w-5 h-5 text-emerald-600" /><h3 className="text-base font-bold text-slate-900">Kata laluan {kataBaru.lokasi}</h3></div>
+                <p className="text-sm text-slate-600 mb-4">Salin dan serahkan kepada kerani daerah melalui saluran rasmi. Kata laluan ini <b>tidak akan dipaparkan lagi</b>.</p>
+                <div className="flex items-center gap-2 bg-slate-50 ring-1 ring-slate-200 rounded-xl px-4 py-3 mb-5"><code className="text-lg font-bold tracking-wider text-slate-900 flex-1 select-all">{kataBaru.kata}</code>
+                  <button onClick={() => { try { navigator.clipboard.writeText(kataBaru.kata); paparToast('Disalin'); } catch (e) {} }} className="p-2 rounded-lg hover:bg-white ring-1 ring-slate-200" title="Salin"><Copy className="w-4 h-4" /></button></div>
+                <Butang className="w-full" onClick={() => setKataBaru(null)}>Saya sudah simpan, tutup</Butang>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -1915,15 +2238,15 @@ function uploadToDrive_(u, p) {
 (function () {
   const D = window.__estokDemo, el = document.getElementById('demo-panel');
   const label = { ADMIN_UPK: 'Admin UPK', KERANI_UPK: 'Kerani UPK', PEMANTAU_UPK: 'Pemantau UPK', KERANI_PAD: 'Kerani PAD', PEGAWAI_PAD: 'Pegawai PAD' };
-  const semasa = D.PENGGUNA_DEMO.find(u => u.emel === D.semasa());
+  const semasa = D.semasa() === '' ? { nama: 'Kerani PAD', peranan: 'KERANI_PAD' } : D.PENGGUNA_DEMO.find(u => u.emel === D.semasa());
   let buka = false;
   function lukis() {
-    const nama = semasa ? semasa.nama.replace(/^(En\.|Ustaz)\s+/, '').split(/\s+(bin|binti)\s+/)[0] : 'Tidak berdaftar';
+    const nama = semasa ? semasa.nama.replace(/^(En\.|Ustaz)\s+/, '').split(/\s+(bin|binti)\s+/)[0] : '';
     el.innerHTML = '';
     if (buka) {
       const k = document.createElement('div'); k.className = 'kotak';
-      k.innerHTML = '<h4>Mod Demo e-Stok V3</h4><p>Data contoh disimpan dalam pelayar ini sahaja. Pilih akaun untuk melihat sistem dari sudut setiap peranan.</p>';
-      D.PENGGUNA_DEMO.concat([{ emel: D.TIDAK_BERDAFTAR, nama: 'Staf belum didaftar', peranan: '', lokasi: 'Untuk lihat skrin akses ditolak' }]).forEach(u => {
+      k.innerHTML = '<h4>Mod Demo e-Stok V3</h4><p>Data contoh disimpan dalam pelayar ini sahaja. Staf UPK masuk terus (emel). Kerani PAD masuk melalui skrin kata laluan daerah.</p>';
+      D.PENGGUNA_DEMO.concat([{ emel: '', nama: 'Kerani PAD (mana-mana daerah)', peranan: 'KERANI_PAD', lokasi: 'Kata laluan demo: ' + D.KATA_DEMO }]).forEach(u => {
         const b = document.createElement('button'); b.className = 'u' + (u.emel === D.semasa() ? ' aktif' : '');
         const bb = document.createElement('b'); bb.textContent = u.nama; const sp = document.createElement('span'); sp.textContent = (label[u.peranan] ? label[u.peranan] + ' · ' : '') + u.lokasi;
         b.append(bb, sp); b.onclick = () => D.tukar(u.emel); k.appendChild(b);
@@ -1934,7 +2257,7 @@ function uploadToDrive_(u, p) {
     }
     const p = document.createElement('button'); p.className = 'pil';
     const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'DEMO';
-    const tx = document.createElement('span'); tx.textContent = (semasa ? label[semasa.peranan] + ': ' + nama : nama) + (buka ? '  ▾' : '  ▴');
+    const tx = document.createElement('span'); tx.textContent = (semasa && semasa.peranan === 'KERANI_PAD' ? 'Kerani PAD' : (semasa ? label[semasa.peranan] + ': ' + nama : '')) + (buka ? '  ▾' : '  ▴');
     p.append(tag, tx); p.onclick = () => { buka = !buka; lukis(); }; el.appendChild(p);
   }
   lukis();
